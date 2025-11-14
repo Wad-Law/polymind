@@ -2,25 +2,33 @@ mod bus;
 mod marketdata;
 mod strategy;
 mod execution;
-mod altdata;
+mod polymarket;
+mod rss;
+mod finjuice;
 mod core;
+mod config;
 
 use std::time::Duration;
 use anyhow::Result;
-use bus::types::Bus;
-use execution::actor::ExecutionActor;
-use altdata::actor::AltDataActor;
-use marketdata::actor::MarketDataActor;
-use strategy::actor::StrategyActor;
 use reqwest::Client;
 use tracing::{error, info, info_span, Instrument};
 use tokio_util::sync::CancellationToken;
-
-use crate::core::types::Actor;
+use bus::types::Bus;
+use execution::actor::ExecutionActor;
+use finjuice::actor::FinJuiceActor;
+use marketdata::actor::MarketDataActor;
+use strategy::actor::StrategyActor;
+use config::config::AppCfg;
+use core::types::Actor;
+use polymarket::actor::PolyActor;
+use rss::actor::RssActor;
 
 #[tokio::main]
 async fn main()  -> Result<()>   {
     tracing_subscriber::fmt::init();
+
+    let cfg = AppCfg::load("config.yml")?;
+
     // Root span for the supervisor/main thread
     let span = info_span!(
         "Supervisor",
@@ -39,23 +47,28 @@ async fn main()  -> Result<()>   {
 
     info!("Initializing Client");
     let client = Client::builder()
-        .user_agent("poly mind")
-        .pool_idle_timeout(Duration::from_secs(30))
-        .pool_max_idle_per_host(8)
-        .tcp_keepalive(Duration::from_secs(30))
-        .timeout(Duration::from_secs(10))
+        .user_agent(cfg.http.user_agent)
+        .pool_idle_timeout(cfg.http.poolIdleTimeout)
+        .pool_max_idle_per_host(cfg.http.poolMaxIdlePerHost)
+        .tcp_keepalive(cfg.http.tcpKeepAlive)
+        .timeout(cfg.http.timeout)
         .build()
         .expect("client");
 
     info!("Building actors");
-    let alt_data = AltDataActor::new(bus.clone(), client.clone(), shutdown.clone());
+    let poly = PolyActor::new(bus.clone(), client.clone(), cfg.polymarket.clone(), shutdown.clone());
+    let rss  = RssActor::new(bus.clone(), client.clone(), cfg.rss.clone(), shutdown.clone());
+    let fj   = FinJuiceActor::new(bus.clone(), client.clone(), cfg.financial_juice.clone(), shutdown.clone());
     let market_data = MarketDataActor::new(bus.clone(), shutdown.clone());
     let strat = StrategyActor::new(bus.clone(), shutdown.clone());
     let exec = ExecutionActor::new(bus.clone(), shutdown.clone());
 
     info!("Spawning actors");
     let mut actors = tokio::task::JoinSet::new();
-    actors.spawn(alt_data.run().instrument(info_span!("AltData")));
+
+    actors.spawn(poly.run().instrument(info_span!("PolyMarket")));
+    actors.spawn(rss.run().instrument(info_span!("RSS")));
+    actors.spawn(fj.run().instrument(info_span!("FinancialJuice")));
     actors.spawn(market_data.run().instrument(info_span!("MarketData")));
     actors.spawn(strat.run().instrument(info_span!("Strat")));
     actors.spawn(exec.run().instrument(info_span!("Exec")));

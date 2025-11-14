@@ -1,0 +1,29 @@
+http:
+  userAgent: "polymind/0.1"
+  timeout: "10s"
+  poolIdleTimeout: "30s"
+  poolMaxIdlePerHost: 16
+  tcpKeepAlive: "30s"
+
+polymarket:
+  baseUrl: "https://api.polymarket.com"
+  gammaUrl: "https://gamma-api.polymarket.com/events"
+  marketListRefresh: "30s"
+  pageLimit: 100
+  ascending: false
+  includeClosed: false
+
+rss:
+  refresh: "5s"
+  concurrency: 16
+  feeds:
+    - id: "cnn"
+      url: "http://rss.cnn.com/rss/edition.rss"
+      lang: "en"
+    - id: "ecb-press"
+      url: "https://www.ecb.europa.eu/press/pressconf/html/index.en.rss"
+      lang: "en"
+
+financialJuice:
+  baseUrl: "https://www.financialjuice.com/"
+  refresh: "5s"

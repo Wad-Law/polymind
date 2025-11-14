@@ -13,3 +13,5 @@ tokio-util = "0.7.17"
 reqwest = { version = "0.12.24", features = ["json"] }
 serde = { version = "1.0.228", features = ["derive"] }
 futures = "0.3.31"
+humantime-serde = "1"
+config = "0.15.19"

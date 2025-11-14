@@ -1,6 +1,5 @@
 use anyhow::Result;
 use serde::Deserialize;
-use tokio_util::either::Either;
 
 #[async_trait::async_trait]
 pub trait Actor: Send + Sync + 'static {
