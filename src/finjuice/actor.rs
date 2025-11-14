@@ -2,11 +2,12 @@ use std::time::Duration;
 use crate::bus::types::Bus;
 use crate::core::types::{Actor, RawNews};
 use anyhow::{Context, Result};
-use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveTime, TimeZone, Utc};
+use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 use reqwest::{header, Client, Url};
 use scraper::{Html, Selector};
+use serde_json::Value;
 use tokio::time::interval;
 use crate::config::config::{FinJuiceCfg};
 
@@ -47,9 +48,123 @@ fn parse_fj_time(s: &str) -> Option<DateTime<Utc>> {
     Some(local_dt.with_timezone(&Utc))
 }
 
+fn parse_date_published_to_utc(s: &str) -> Option<DateTime<Utc>> {
+    // Example: "2025-11-14T16:51:20.647"
+    // Treat as UTC (good enough for MVP; if it’s server-local you’re off by at most a few hours)
+    NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f")
+        .ok()
+        .map(|naive| Utc.from_utc_datetime(&naive))
+}
+
+fn extract_inner_json(xml: &str) -> Result<String> {
+    // 1) Find the <string ...> tag
+    let string_tag_start = xml
+        .find("<string")
+        .ok_or_else(|| anyhow::anyhow!("no <string> tag found in XML"))?;
+
+    // 2) Find the end of that tag ('>') starting from there
+    let after_open_gt = xml[string_tag_start..]
+        .find('>')
+        .map(|i| string_tag_start + i + 1)
+        .ok_or_else(|| anyhow::anyhow!("no '>' after <string> tag"))?;
+
+    // 3) Find the closing </string>
+    let close_tag_start = xml[after_open_gt..]
+        .find("</string>")
+        .map(|i| after_open_gt + i)
+        .ok_or_else(|| anyhow::anyhow!("no </string> closing tag found"))?;
+
+    Ok(xml[after_open_gt..close_tag_start].trim().to_string())
+}
+
+pub fn parse_fj_response_to_raw(xml: &str) -> Result<Vec<RawNews>> {
+    let json_str = extract_inner_json(xml)?;
+    let v: Value = serde_json::from_str(&json_str).context("parsing FJ JSON")?;
+
+    let news_items = v["News"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("FJ JSON missing 'News' array"))?;
+
+    let mut out = Vec::with_capacity(news_items.len());
+
+    for item in news_items {
+        // Safely pull fields with sane defaults
+        let title = item.get("Title").and_then(Value::as_str).unwrap_or("").trim();
+        if title.is_empty() {
+            continue; // skip broken entries
+        }
+
+        let description = item
+            .get("Description")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim();
+
+        let url = item
+            .get("EURL")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim();
+
+        let labels = item
+            .get("Labels")
+            .and_then(Value::as_array)
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str())
+                    .map(|s| s.trim().to_string())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        let date_published_str = item
+            .get("DatePublished")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+
+        let published = parse_date_published_to_utc(date_published_str);
+
+        let rn = RawNews {
+            feed: "FinancialJuice".to_string(),
+            title: title.to_string(),
+            url: url.to_string(),
+            labels,
+            published,
+            description: description.to_string(),
+        };
+
+        out.push(rn);
+    }
+
+    Ok(out)
+}
+
 impl FinJuiceActor {
     pub fn new(bus: Bus, client: Client, cfg: FinJuiceCfg, shutdown: CancellationToken) -> FinJuiceActor {
         Self { bus, client, cfg, shutdown }
+    }
+
+    pub async fn fetch_data_from_api(&self)-> Result<Vec<RawNews>>  {
+        let xml = self.client
+            .get(&self.cfg.altUrl)
+            .header("Origin", self.cfg.baseUrl.to_string())
+            .query(&[
+                ("info", self.cfg.info.to_string()),
+                ("TimeOffSet", 1.to_string()),
+                ("tabID", 0.to_string()),
+                ("oldID", 0.to_string()),
+                ("TickerID", 0.to_string()),
+                ("FeedCompanyID", 0.to_string()),
+                ("strSearch", "".to_string()),
+                ("extraNID", 0.to_string()),
+            ])
+            .send()
+            .await?
+            .error_for_status()?
+            .text()
+            .await?;
+
+        parse_fj_response_to_raw(&xml)
     }
 
     pub async fn fetch_html_and_parse(&self)-> Result<Vec<RawNews>>  {
@@ -136,7 +251,7 @@ impl Actor for FinJuiceActor {
                 }
 
                 _ = tick.tick() => {
-                    match self.fetch_html_and_parse().await {
+                    match self.fetch_data_from_api().await {
                         Ok(events) => {
                             for n in events {
                                 if let Err(e) = self.bus.raw_news.publish(n).await {

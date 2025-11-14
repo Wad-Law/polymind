@@ -65,6 +65,8 @@ pub struct FinJuiceCfg {
     pub baseUrl: String,
     #[serde(with = "humantime_serde")]
     pub refresh: Duration,
+    pub altUrl: String,
+    pub info: String,
     pub cookie: String
 }
 
