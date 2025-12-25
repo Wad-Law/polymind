@@ -1,0 +1,373 @@
+warning: fields `ascending` and `include_closed` are never read
+  --> src/config/config.rs:65:9
+   |
+53 | pub struct PolyCfg {
+   |            ------- fields in this struct
+...
+65 |     pub ascending: bool,
+   |         ^^^^^^^^^
+66 |     #[serde(rename = "includeClosed", default)]
+67 |     pub include_closed: bool,
+   |         ^^^^^^^^^^^^^^
+   |
+   = note: `PolyCfg` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `lang` is never read
+   --> src/config/config.rs:107:9
+    |
+103 | pub struct RssFeedCfg {
+    |            ---------- field in this struct
+...
+107 |     pub lang: String,
+    |         ^^^^
+    |
+    = note: `RssFeedCfg` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `cookie` is never read
+   --> src/config/config.rs:147:9
+    |
+139 | pub struct FinJuiceCfg {
+    |            ----------- field in this struct
+...
+147 |     pub cookie: String,
+    |         ^^^^^^
+    |
+    = note: `FinJuiceCfg` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `url`, `feed`, `published`, and `labels` are never read
+  --> src/core/types.rs:12:9
+   |
+11 | pub struct RawNews {
+   |            ------- fields in this struct
+12 |     pub url: String,
+   |         ^^^
+...
+15 |     pub feed: String,
+   |         ^^^^
+16 |     pub published: Option<chrono::DateTime<chrono::Utc>>,
+   |         ^^^^^^^^^
+17 |     pub labels: Vec<String>,
+   |         ^^^^^^
+   |
+   = note: `RawNews` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: variant `Sell` is never constructed
+  --> src/core/types.rs:38:5
+   |
+36 | pub enum Side {
+   |          ---- variant in this enum
+37 |     Buy,
+38 |     Sell,
+   |     ^^^^
+   |
+   = note: `Side` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: fields `client_order_id`, `market_id`, `avg_px`, `filled`, `fee`, and `ts_ms` are never read
+  --> src/core/types.rs:52:9
+   |
+51 | pub struct Execution {
+   |            --------- fields in this struct
+52 |     pub client_order_id: String,
+   |         ^^^^^^^^^^^^^^^
+53 |     pub market_id: String,
+   |         ^^^^^^^^^
+54 |     pub avg_px: f32,
+   |         ^^^^^^
+55 |     pub filled: f32,
+   |         ^^^^^^
+56 |     pub fee: f32,
+   |         ^^^
+57 |     pub ts_ms: i64,
+   |         ^^^^^
+   |
+   = note: `Execution` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: fields `id`, `title`, `description`, and `markets` are never read
+  --> src/core/types.rs:62:9
+   |
+61 | pub struct PolyMarketEvent {
+   |            --------------- fields in this struct
+62 |     pub id: String,
+   |         ^^
+63 |     #[serde(default)]
+64 |     pub title: Option<String>,
+   |         ^^^^^
+65 |     #[serde(default)]
+66 |     pub description: Option<String>,
+   |         ^^^^^^^^^^^
+67 |     #[serde(default)]
+68 |     pub markets: Option<Vec<PolyMarketMarket>>,
+   |         ^^^^^^^
+   |
+   = note: `PolyMarketEvent` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: field `id` is never read
+  --> src/core/types.rs:73:9
+   |
+72 | pub struct PolyMarketMarket {
+   |            ---------------- field in this struct
+73 |     pub id: String,
+   |         ^^
+   |
+   = note: `PolyMarketMarket` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: field `order_id` is never read
+  --> src/execution/polymarket.rs:62:5
+   |
+60 | struct CreateOrderResponse {
+   |        ------------------- field in this struct
+61 |     #[serde(rename = "orderID")]
+62 |     order_id: String,
+   |     ^^^^^^^^
+   |
+   = note: `CreateOrderResponse` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: function `parse_fj_time` is never used
+  --> src/finjuice/actor.rs:23:4
+   |
+23 | fn parse_fj_time(s: &str) -> Option<DateTime<Utc>> {
+   |    ^^^^^^^^^^^^^
+
+warning: methods `fetch_html_and_parse` and `parse_html` are never used
+   --> src/finjuice/actor.rs:189:18
+    |
+148 | impl FinJuiceActor {
+    | ------------------ methods in this implementation
+...
+189 |     pub async fn fetch_html_and_parse(&self) -> Result<Vec<RawNews>> {
+    |                  ^^^^^^^^^^^^^^^^^^^^
+...
+201 |     fn parse_html(&self, html: &str) -> Result<Vec<RawNews>> {
+    |        ^^^^^^^^^^
+
+warning: struct `PolyMarketDetail` is never constructed
+  --> src/marketdata/actor.rs:20:8
+   |
+20 | struct PolyMarketDetail {
+   |        ^^^^^^^^^^^^^^^^
+
+warning: variant `TreatyOrDeal` is never constructed
+  --> src/strategy/canonical_event.rs:31:5
+   |
+25 | pub enum EventKind {
+   |          --------- variant in this enum
+...
+31 |     TreatyOrDeal,
+   |     ^^^^^^^^^^^^
+   |
+   = note: `EventKind` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: variant `Counterparty` is never constructed
+  --> src/strategy/canonical_event.rs:61:5
+   |
+59 | pub enum EntityRole {
+   |          ---------- variant in this enum
+60 |     PrimaryActor,
+61 |     Counterparty,
+   |     ^^^^^^^^^^^^
+   |
+   = note: `EntityRole` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `role`, `kind`, and `value` are never read
+  --> src/strategy/canonical_event.rs:70:9
+   |
+69 | pub struct CanonicalEntity {
+   |            --------------- fields in this struct
+70 |     pub role: EntityRole,
+   |         ^^^^
+71 |     pub kind: EntityKind,
+   |         ^^^^
+72 |     pub value: String,
+   |         ^^^^^
+   |
+   = note: `CanonicalEntity` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `kind`, `raw`, `value`, and `unit` are never read
+  --> src/strategy/canonical_event.rs:88:9
+   |
+87 | pub struct NumberFeature {
+   |            ------------- fields in this struct
+88 |     pub kind: NumberKind,
+   |         ^^^^
+89 |     pub raw: String,
+   |         ^^^
+90 |     pub value: f64,
+   |         ^^^^^
+91 |     pub unit: Option<String>,
+   |         ^^^^
+   |
+   = note: `NumberFeature` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: multiple fields are never read
+   --> src/strategy/canonical_event.rs:96:9
+    |
+ 95 | pub struct CanonicalEvent {
+    |            -------------- fields in this struct
+ 96 |     pub domain: EventDomain,
+    |         ^^^^^^
+ 97 |     pub kind: EventKind,
+    |         ^^^^
+ 98 |     pub primary_entities: Vec<CanonicalEntity>,
+    |         ^^^^^^^^^^^^^^^^
+ 99 |     pub secondary_entities: Vec<CanonicalEntity>,
+    |         ^^^^^^^^^^^^^^^^^^
+100 |     pub numbers: Vec<NumberFeature>,
+    |         ^^^^^^^
+101 |     pub time_window: Option<TimeWindow>,
+    |         ^^^^^^^^^^^
+102 |     pub location: Option<String>, // country / league / region
+    |         ^^^^^^^^
+    |
+    = note: `CanonicalEvent` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: associated function `with_dict` is never used
+   --> src/strategy/canonical_event.rs:155:12
+    |
+148 | impl CanonicalEventBuilder {
+    | -------------------------- associated function in this implementation
+...
+155 |     pub fn with_dict(dict: CanonicalDictionaries) -> Self {
+    |            ^^^^^^^^^
+
+warning: multiple variants are never constructed
+  --> src/strategy/event_features.rs:20:5
+   |
+19 | pub enum EntityKind {
+   |          ---------- variants in this enum
+20 |     Person,
+   |     ^^^^^^
+21 |     Organization,
+   |     ^^^^^^^^^^^^
+...
+25 |     Company,
+   |     ^^^^^^^
+26 |     MacroConcept,
+27 |     SportsTeam,
+   |     ^^^^^^^^^^
+28 |     League,
+   |     ^^^^^^
+29 |     Celebrity,
+   |     ^^^^^^^^^
+30 |     Other,
+   |     ^^^^^
+   |
+   = note: `EntityKind` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: associated function `with_default_dicts` is never used
+   --> src/strategy/event_features.rs:159:12
+    |
+124 | impl EventFeatureExtractor {
+    | -------------------------- associated function in this implementation
+...
+159 |     pub fn with_default_dicts() -> Self {
+    |            ^^^^^^^^^^^^^^^^^^
+
+warning: field `writer` is never read
+ --> src/strategy/market_index.rs:9:5
+  |
+7 | pub struct MarketIndex {
+  |            ----------- field in this struct
+8 |     index: Index,
+9 |     writer: IndexWriter,
+  |     ^^^^^^
+
+warning: method `add_market` is never used
+  --> src/strategy/market_index.rs:54:12
+   |
+18 | impl MarketIndex {
+   | ---------------- method in this implementation
+...
+54 |     pub fn add_market(
+   |            ^^^^^^^^^^
+
+warning: fields `raw`, `stemmed_tokens`, `bigrams`, and `trigrams` are never read
+  --> src/strategy/tokenization.rs:45:9
+   |
+43 | pub struct TokenizedNews {
+   |            ------------- fields in this struct
+44 |     /// Original RawNews (owned).
+45 |     pub raw: RawNews,
+   |         ^^^
+...
+51 |     pub stemmed_tokens: Vec<String>,
+   |         ^^^^^^^^^^^^^^
+52 |     /// Bigrams (space-joined, e.g. "ecb cuts").
+53 |     pub bigrams: Vec<String>,
+   |         ^^^^^^^
+54 |     /// Trigrams (space-joined, e.g. "ecb cuts rates").
+55 |     pub trigrams: Vec<String>,
+   |         ^^^^^^^^
+   |
+   = note: `TokenizedNews` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: struct `NormalizedText` is never constructed
+  --> src/strategy/types.rs:16:12
+   |
+16 | pub struct NormalizedText {
+   |            ^^^^^^^^^^^^^^
+
+warning: struct `Entities` is never constructed
+  --> src/strategy/types.rs:21:12
+   |
+21 | pub struct Entities {
+   |            ^^^^^^^^
+
+warning: struct `TimeWindow` is never constructed
+  --> src/strategy/types.rs:26:12
+   |
+26 | pub struct TimeWindow {
+   |            ^^^^^^^^^^
+
+warning: fields `number_overlap`, `time_compat`, `liquidity_score`, and `staleness_penalty` are never read
+  --> src/strategy/types.rs:44:9
+   |
+41 | pub struct ScoreComponents {
+   |            --------------- fields in this struct
+...
+44 |     pub number_overlap: f64,
+   |         ^^^^^^^^^^^^^^
+45 |     pub time_compat: f64,
+   |         ^^^^^^^^^^^
+46 |     pub liquidity_score: f64,
+   |         ^^^^^^^^^^^^^^^
+47 |     pub staleness_penalty: f64,
+   |         ^^^^^^^^^^^^^^^^^
+   |
+   = note: `ScoreComponents` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: fields `score` and `edge` are never read
+  --> src/strategy/types.rs:67:9
+   |
+65 | pub struct EdgedCandidate {
+   |            -------------- fields in this struct
+66 |     pub candidate: RawCandidate,
+67 |     pub score: f64,
+   |         ^^^^^
+...
+70 |     pub edge: f64,
+   |         ^^^^
+   |
+   = note: `EdgedCandidate` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `kelly_fraction` is never read
+  --> src/strategy/types.rs:89:9
+   |
+86 | pub struct SizedDecision {
+   |            ------------- field in this struct
+...
+89 |     pub kelly_fraction: f64,
+   |         ^^^^^^^^^^^^^^
+   |
+   = note: `SizedDecision` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: associated function `new` is never used
+  --> src/strategy/kelly.rs:18:12
+   |
+17 | impl KellySizer {
+   | --------------- associated function in this implementation
+18 |     pub fn new(kelly_multiplier: f64, max_position_fraction: f64) -> Self {
+   |            ^^^
+
+warning: `ingestor` (bin "ingestor") generated 30 warnings
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.19s

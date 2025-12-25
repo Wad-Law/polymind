@@ -1,5 +1,5 @@
 use anyhow::Result;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[async_trait::async_trait]
 pub trait Actor: Send + Sync + 'static {
@@ -14,15 +14,15 @@ pub struct RawNews {
     pub description: String,
     pub feed: String,
     pub published: Option<chrono::DateTime<chrono::Utc>>,
-    pub labels: Vec<String>
+    pub labels: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
-pub struct MarketDataRequest{
-    pub market_id: String
+pub struct MarketDataRequest {
+    pub market_id: String,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarketDataSnap {
     pub market_id: String,
     pub book_ts_ms: i64,
@@ -32,10 +32,17 @@ pub struct MarketDataSnap {
     pub ask_size: f32,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Copy)]
+pub enum Side {
+    Buy,
+    Sell,
+}
+
 #[derive(Clone, Debug)]
 pub struct Order {
     pub client_order_id: String,
     pub market_id: String,
+    pub side: Side,
     pub price: f32,
     pub size: f32,
 }
@@ -58,7 +65,7 @@ pub struct PolyMarketEvent {
     #[serde(default)]
     pub description: Option<String>,
     #[serde(default)]
-    pub markets: Option<Vec<PolyMarketMarket>>
+    pub markets: Option<Vec<PolyMarketMarket>>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

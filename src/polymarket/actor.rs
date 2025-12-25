@@ -1,41 +1,54 @@
-use std::time::Duration;
 use crate::bus::types::Bus;
+use crate::config::config::PolyCfg;
 use crate::core::types::{Actor, PolyMarketEvent};
-use anyhow::Result;
+use anyhow::{Context, Result};
+use futures::{StreamExt, stream};
+use reqwest::Client;
+use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
-use reqwest::Client;
-use futures::{stream, StreamExt};
-use tokio::time::interval;
-use crate::config::config::PolyCfg;
 
 pub struct PolyActor {
     pub bus: Bus,
     pub client: Client,
     pub poly_cfg: PolyCfg,
-    pub shutdown: CancellationToken
+    pub shutdown: CancellationToken,
 }
 
 impl PolyActor {
-    pub fn new(bus: Bus, client: Client, poly_cfg: PolyCfg, shutdown: CancellationToken) -> PolyActor {
-        Self { bus, client, poly_cfg, shutdown }
+    pub fn new(
+        bus: Bus,
+        client: Client,
+        poly_cfg: PolyCfg,
+        shutdown: CancellationToken,
+    ) -> PolyActor {
+        Self {
+            bus,
+            client,
+            poly_cfg,
+            shutdown,
+        }
     }
 
     async fn fetch_events_page(&self, offset: u32) -> Result<Vec<PolyMarketEvent>> {
-        let res = self.client
-            .get(self.poly_cfg.gammaUrl.clone())
+        let res = self
+            .client
+            .get(self.poly_cfg.gamma_events_url.clone())
             .query(&[
                 ("order", "id"),
                 ("ascending", "false"),
-                ("closed", "false"),
-                ("limit", &self.poly_cfg.pageLimit.to_string()),
+                ("active", "true"),
+                ("limit", &self.poly_cfg.page_limit.to_string()),
                 ("offset", &offset.to_string()),
             ])
             .send()
-            .await?
-            .error_for_status()?
+            .await
+            .context("requesting events")?
+            .error_for_status()
+            .context("received non-success status for events request")?
             .json::<Vec<PolyMarketEvent>>()
-            .await?;
+            .await
+            .context("parsing events response")?;
         Ok(res)
     }
 
@@ -46,13 +59,17 @@ impl PolyActor {
         loop {
             let page = self.fetch_events_page(offset).await?;
 
-            if page.is_empty() { break; }
+            if page.is_empty() {
+                break;
+            }
             let len = page.len();
             for ev in page {
                 rows.push(ev);
             }
-            if len < self.poly_cfg.pageLimit as usize { break; }
-            offset += self.poly_cfg.pageLimit;
+            if len < self.poly_cfg.page_limit as usize {
+                break;
+            }
+            offset += self.poly_cfg.page_limit;
         }
         Ok(rows)
     }
@@ -64,7 +81,7 @@ impl Actor for PolyActor {
         info!("PolyActor started");
 
         // throttle the loop
-        let mut tick = interval(Duration::from_secs(self.poly_cfg.marketListRefresh.as_secs())); // refresh cadence
+        let mut tick = tokio::time::interval(self.poly_cfg.market_list_refresh); // refresh cadence
 
         loop {
             tokio::select! {

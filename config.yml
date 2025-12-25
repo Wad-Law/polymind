@@ -7,7 +7,8 @@ http:
 
 polymarket:
   baseUrl: "https://api.polymarket.com"
-  gammaUrl: "https://gamma-api.polymarket.com/events"
+  gammaEventsUrl: "https://gamma-api.polymarket.com/events"
+  gammaMarketsUrl: "https://gamma-api.polymarket.com/markets"
   marketListRefresh: "30s"
   pageLimit: 100
   ascending: false

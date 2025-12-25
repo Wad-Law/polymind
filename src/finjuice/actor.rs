@@ -1,28 +1,30 @@
-use std::time::Duration;
 use crate::bus::types::Bus;
+use crate::config::config::FinJuiceCfg;
 use crate::core::types::{Actor, RawNews};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
-use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
-use reqwest::{header, Client, Url};
+use reqwest::{Client, Url, header};
 use scraper::{Html, Selector};
 use serde_json::Value;
+use std::time::Duration;
 use tokio::time::interval;
-use crate::config::config::{FinJuiceCfg};
+use tokio_util::sync::CancellationToken;
+use tracing::{error, info};
 
 pub struct FinJuiceActor {
     pub bus: Bus,
     pub client: Client,
     pub cfg: FinJuiceCfg,
-    pub shutdown: CancellationToken
+    pub shutdown: CancellationToken,
 }
 
 /// Parse "HH:MM Mon DD" as **local time** (machine timezone) in the **current local year**,
 /// then convert to UTC. Returns None if parsing fails (or on DST ambiguity it picks earliest).
 fn parse_fj_time(s: &str) -> Option<DateTime<Utc>> {
     let parts: Vec<_> = s.split_whitespace().collect();
-    if parts.len() != 3 { return None; }
+    if parts.len() != 3 {
+        return None;
+    }
 
     // HH:MM
     let time = NaiveTime::parse_from_str(parts[0], "%H:%M").ok()?;
@@ -89,7 +91,11 @@ pub fn parse_fj_response_to_raw(xml: &str) -> Result<Vec<RawNews>> {
 
     for item in news_items {
         // Safely pull fields with sane defaults
-        let title = item.get("Title").and_then(Value::as_str).unwrap_or("").trim();
+        let title = item
+            .get("Title")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim();
         if title.is_empty() {
             continue; // skip broken entries
         }
@@ -140,20 +146,37 @@ pub fn parse_fj_response_to_raw(xml: &str) -> Result<Vec<RawNews>> {
 }
 
 impl FinJuiceActor {
-    pub fn new(bus: Bus, client: Client, cfg: FinJuiceCfg, shutdown: CancellationToken) -> FinJuiceActor {
-        Self { bus, client, cfg, shutdown }
+    pub fn new(
+        bus: Bus,
+        client: Client,
+        cfg: FinJuiceCfg,
+        shutdown: CancellationToken,
+    ) -> FinJuiceActor {
+        Self {
+            bus,
+            client,
+            cfg,
+            shutdown,
+        }
     }
 
-    async fn fetch_data_from_api(&self)-> Result<Vec<RawNews>>  {
-        let url = format!(
-            "{}?info={}&TimeOffSet=1&tabID=0&oldID=0&TickerID=0&FeedCompanyID=0&strSearch=&extraNID=0",
-            self.cfg.altUrl,
-            self.cfg.info,
-        );
+    fn get_api_url(&self) -> String {
+        if !self.cfg.alt_url.is_empty() {
+            return format!(
+                "{}?info={}&TimeOffSet=1&tabID=0&oldID=0&TickerID=0&FeedCompanyID=0&strSearch=&extraNID=0",
+                self.cfg.alt_url, self.cfg.info,
+            );
+        }
+        format!("{}/news", self.cfg.base_url)
+    }
 
-        let xml = self.client
+    async fn fetch_data_from_api(&self) -> Result<Vec<RawNews>> {
+        let url = self.get_api_url();
+
+        let xml = self
+            .client
             .get(url)
-            .header("Origin", self.cfg.baseUrl.to_string())
+            .header("Origin", self.cfg.base_url.to_string())
             .send()
             .await?
             .error_for_status()?
@@ -163,12 +186,14 @@ impl FinJuiceActor {
         parse_fj_response_to_raw(&xml)
     }
 
-    pub async fn fetch_html_and_parse(&self)-> Result<Vec<RawNews>>  {
-
-        let resp = self.client
-            .get(&self.cfg.baseUrl)
+    pub async fn fetch_html_and_parse(&self) -> Result<Vec<RawNews>> {
+        let resp = self
+            .client
+            .get(&self.cfg.base_url)
             .header(header::COOKIE, self.cfg.cookie.to_string())
-            .send().await.context("GET FinancialJuice")?;
+            .send()
+            .await
+            .context("GET FinancialJuice")?;
         let body = resp.error_for_status()?.text().await?;
 
         self.parse_html(&body)
@@ -181,13 +206,15 @@ impl FinJuiceActor {
         let sel_labels = Selector::parse("span.news-label").unwrap();
         let sel_social = Selector::parse("ul.social-nav").unwrap();
 
-        let base = Url::parse(&self.cfg.baseUrl)?;
+        let base = Url::parse(&self.cfg.base_url)?;
         let mut out = Vec::new();
 
         for item in doc.select(&sel_item) {
             // filter ads/sponsored blocks
             let hid = item.value().attr("data-headlineid").unwrap_or("");
-            if hid == "0" || hid.is_empty() { continue; }
+            if hid == "0" || hid.is_empty() {
+                continue;
+            }
 
             // title
             let title = if let Some(s) = item.select(&sel_title).next() {
@@ -195,28 +222,34 @@ impl FinJuiceActor {
             } else {
                 continue; // no title, skip
             };
-            if title.is_empty() { continue; }
+            if title.is_empty() {
+                continue;
+            }
 
             // link from social-nav data-link
             let url = if let Some(sn) = item.select(&sel_social).next() {
                 if let Some(dl) = sn.value().attr("data-link") {
                     dl.to_string()
-                } else { base.as_str().to_string() }
-            } else { base.as_str().to_string() };
+                } else {
+                    base.as_str().to_string()
+                }
+            } else {
+                base.as_str().to_string()
+            };
 
             // labels
-            let labels = item.select(&sel_labels)
+            let labels = item
+                .select(&sel_labels)
                 .map(|n| n.text().collect::<String>().trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect::<Vec<_>>();
 
             // time
-            let ts_utc = item.select(&sel_time).next()
-                .and_then(|n| {
-                    let raw = n.text().collect::<String>();
-                    // FinancialJuice  use local tz
-                    parse_fj_time(raw.trim())
-                });
+            let ts_utc = item.select(&sel_time).next().and_then(|n| {
+                let raw = n.text().collect::<String>();
+                // FinancialJuice  use local tz
+                parse_fj_time(raw.trim())
+            });
 
             out.push(RawNews {
                 feed: "FinancialJuice".into(),
