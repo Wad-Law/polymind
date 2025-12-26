@@ -58,12 +58,12 @@ impl StrategyActor {
             hard_filterer: HardFilterer::new(),
             kelly_sizer: KellySizer::default(),
             market_data_cache: HashMap::new(),
-            bankroll: Decimal::from_f64(cfg.strategy.bankroll).unwrap_or(Decimal::ZERO),
+            bankroll: Decimal::from_f64(cfg.strategy.sim_bankroll).unwrap_or(Decimal::ZERO),
             llm_client: LlmClient::new(cfg.llm.clone()),
             db,
             portfolio: Portfolio {
                 positions: HashMap::new(),
-                cash: Decimal::from_f64(cfg.strategy.bankroll).unwrap_or(Decimal::ZERO), // Init cash from config
+                cash: Decimal::from_f64(cfg.strategy.sim_bankroll).unwrap_or(Decimal::ZERO), // Init cash from config
                 total_equity: Decimal::ZERO,
             },
             status: crate::core::types::SystemStatus::Active,

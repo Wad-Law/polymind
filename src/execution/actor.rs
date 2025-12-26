@@ -1,23 +1,25 @@
 use crate::bus::types::Bus;
 use crate::core::types::Actor;
 use crate::core::types::BalanceUpdate;
-use crate::execution::polymarket::PolyExecutionClient;
 use anyhow::Result;
 use chrono::Utc;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
+use crate::execution::client::ExecutionClient;
+use std::sync::Arc;
+
 pub struct ExecutionActor {
     pub bus: Bus,
     pub shutdown: CancellationToken,
-    pub client: PolyExecutionClient,
+    pub client: Arc<dyn ExecutionClient>,
 }
 
 impl ExecutionActor {
     pub fn new(
         bus: Bus,
         shutdown: CancellationToken,
-        client: PolyExecutionClient,
+        client: Arc<dyn ExecutionClient>,
     ) -> ExecutionActor {
         Self {
             bus,

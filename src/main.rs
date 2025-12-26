@@ -80,18 +80,28 @@ async fn main() -> Result<()> {
         cfg.financial_juice.clone(),
         shutdown.clone(),
     );
-    let market_data = MarketPricingActor::new(
-        bus.clone(),
-        client.clone(),
-        cfg.polymarket.clone(),
-        shutdown.clone(),
-    );
+    use marketdata::client::MarketDataClient;
+    use marketdata::polymarket::PolyMarketDataClient;
+    use marketdata::simulator::SimMarketDataClient;
+
+    let md_client: std::sync::Arc<dyn MarketDataClient> = if cfg.strategy.sim_market_data {
+        info!("Using Simulated Market Data");
+        std::sync::Arc::new(SimMarketDataClient::new())
+    } else {
+        info!("Using Live Polymarket Data");
+        std::sync::Arc::new(PolyMarketDataClient::new(
+            cfg.polymarket.clone(),
+            client.clone(),
+        ))
+    };
+
+    let market_data = MarketPricingActor::new(bus.clone(), md_client, shutdown.clone());
     let risk = RiskActor::new(bus.clone(), shutdown.clone());
 
     info!("Initializing Database using Postgres URL");
     // Default to a common postgres local url if not set
     let db_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://user:password@localhost:5432/ingestor".to_string());
+        .unwrap_or_else(|_| "postgres://user:password@localhost:5432/polymind".to_string());
 
     use persistence::database::Database;
     let db = Database::new(&db_url)
@@ -99,7 +109,23 @@ async fn main() -> Result<()> {
         .expect("Failed to init database");
 
     let strat = StrategyActor::new(bus.clone(), shutdown.clone(), &cfg, db.clone());
-    let exec_client = PolyExecutionClient::new(cfg.polymarket.clone(), client.clone());
+    use execution::client::ExecutionClient;
+    use execution::simulator::SimExecutionClient;
+    use rust_decimal::Decimal;
+    use rust_decimal::prelude::FromPrimitive;
+
+    let exec_client: std::sync::Arc<dyn ExecutionClient> = if cfg.strategy.sim_execution {
+        info!("Running in SIMULATED EXECUTION mode");
+        let initial_cash = Decimal::from_f64(cfg.strategy.sim_bankroll).unwrap_or(Decimal::ZERO);
+        std::sync::Arc::new(SimExecutionClient::new(initial_cash))
+    } else {
+        info!("Running in LIVE EXECUTION mode connected to Polymarket (Real Money)");
+        std::sync::Arc::new(PolyExecutionClient::new(
+            cfg.polymarket.clone(),
+            client.clone(),
+        ))
+    };
+
     let exec = ExecutionActor::new(bus.clone(), shutdown.clone(), exec_client);
 
     info!("Spawning actors");

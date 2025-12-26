@@ -92,7 +92,7 @@ impl PolyExecutionClient {
         }
     }
 
-    pub async fn create_order(&self, order: &CoreOrder) -> Result<Execution> {
+    pub async fn submit_order(&self, order: &CoreOrder) -> Result<Execution> {
         if self.wallet.is_none() {
             anyhow::bail!("No wallet configured for signing orders");
         }
@@ -253,7 +253,7 @@ impl PolyExecutionClient {
         Ok(execution)
     }
 
-    pub async fn get_balance(&self) -> Result<Decimal> {
+    pub async fn fetch_balance(&self) -> Result<Decimal> {
         if self.wallet.is_none() {
             return Ok(Decimal::ZERO);
         }
@@ -301,7 +301,7 @@ impl PolyExecutionClient {
 
         Ok(bal_dec / scale_dec)
     }
-    pub async fn get_positions(&self) -> Result<Vec<crate::core::types::Position>> {
+    pub async fn fetch_positions(&self) -> Result<Vec<crate::core::types::Position>> {
         if self.wallet.is_none() {
             anyhow::bail!("No wallet configured");
         }
@@ -366,5 +366,22 @@ impl PolyExecutionClient {
         }
 
         Ok(positions)
+    }
+}
+
+use crate::execution::client::ExecutionClient;
+
+#[async_trait::async_trait]
+impl ExecutionClient for PolyExecutionClient {
+    async fn create_order(&self, order: &CoreOrder) -> Result<Execution> {
+        self.submit_order(order).await
+    }
+
+    async fn get_balance(&self) -> Result<Decimal> {
+        self.fetch_balance().await
+    }
+
+    async fn get_positions(&self) -> Result<Vec<crate::core::types::Position>> {
+        self.fetch_positions().await
     }
 }

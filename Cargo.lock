@@ -2802,42 +2802,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ingestor"
-version = "0.1.0"
-dependencies = [
- "ahash 0.8.12",
- "aho-corasick",
- "anyhow",
- "async-trait",
- "chrono",
- "chrono-tz",
- "config",
- "deunicode",
- "dotenv",
- "ethers",
- "fastembed",
- "futures",
- "hex",
- "humantime-serde",
- "lazy_static",
- "lru 0.16.2",
- "regex",
- "reqwest 0.12.24",
- "rss",
- "rust-stemmers",
- "rust_decimal",
- "scraper",
- "serde",
- "serde_json",
- "sqlx",
- "tantivy",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "inout"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4014,6 +3978,42 @@ dependencies = [
  "fdeflate",
  "flate2",
  "miniz_oxide",
+]
+
+[[package]]
+name = "polymind"
+version = "0.1.0"
+dependencies = [
+ "ahash 0.8.12",
+ "aho-corasick",
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "chrono-tz",
+ "config",
+ "deunicode",
+ "dotenv",
+ "ethers",
+ "fastembed",
+ "futures",
+ "hex",
+ "humantime-serde",
+ "lazy_static",
+ "lru 0.16.2",
+ "regex",
+ "reqwest 0.12.24",
+ "rss",
+ "rust-stemmers",
+ "rust_decimal",
+ "scraper",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tantivy",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

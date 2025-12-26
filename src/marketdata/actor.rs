@@ -1,106 +1,34 @@
 use crate::bus::types::Bus;
-use crate::config::config::PolyCfg;
 use crate::core::types::Actor;
-use crate::core::types::MarketDataSnap;
+use crate::core::types::MarketDataSnap; // Used in Result<MarketDataSnap> if I kept the signature? No, trait uses it.
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use reqwest::Client;
-use rust_decimal::Decimal;
-use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
-#[derive(Debug, Deserialize)]
-struct PolyToken {
-    token_id: String,
-    outcome: String,
-    price: Decimal,
-}
-
-#[derive(Debug, Deserialize)]
-struct PolyMarketResponse {
-    id: String,
-    tokens: Option<Vec<PolyToken>>,
-    best_bid: Option<Decimal>,
-    best_ask: Option<Decimal>,
-    question: String,
-}
+use crate::marketdata::client::MarketDataClient;
+use std::sync::Arc;
 
 pub struct MarketPricingActor {
     pub bus: Bus,
-    pub client: Client,
-    pub poly_cfg: PolyCfg,
+    pub client: Arc<dyn MarketDataClient>,
     pub shutdown: CancellationToken,
-}
-
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)]
-struct PolyMarketDetail {
-    // id: String,
-    // question: String,
-    #[serde(default)]
-    best_bid: Option<Decimal>,
-    #[serde(default)]
-    best_ask: Option<Decimal>,
-    // spread: Option<f64>,
 }
 
 impl MarketPricingActor {
     pub fn new(
         bus: Bus,
-        client: Client,
-        poly_cfg: PolyCfg,
+        client: Arc<dyn MarketDataClient>,
         shutdown: CancellationToken,
     ) -> MarketPricingActor {
         Self {
             bus,
             client,
-            poly_cfg,
             shutdown,
         }
     }
 
-    fn get_market_url(&self, id: &str) -> String {
-        format!("{}/{}", self.poly_cfg.gamma_markets_url, id)
-    }
-
-    async fn fetch_market_data(&self, market_id: &str) -> Result<MarketDataSnap> {
-        let url = self.get_market_url(market_id);
-
-        let resp = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .context("requesting market data")?;
-
-        if !resp.status().is_success() {
-            anyhow::bail!("Gamma API error: {}", resp.status());
-        }
-
-        let poly_resp: PolyMarketResponse = resp.json().await.context("parsing market data")?;
-
-        let tokens = poly_resp.tokens.map(|ts| {
-            ts.into_iter()
-                .map(|t| crate::core::types::MarketToken {
-                    token_id: t.token_id,
-                    outcome: t.outcome,
-                    price: t.price,
-                })
-                .collect()
-        });
-
-        Ok(MarketDataSnap {
-            market_id: poly_resp.id,
-            book_ts_ms: chrono::Utc::now().timestamp_millis(), // Approximate
-            best_bid: poly_resp.best_bid.unwrap_or(Decimal::ZERO),
-            best_ask: poly_resp.best_ask.unwrap_or(Decimal::ZERO),
-            bid_size: Decimal::ZERO, // Not provided in simple endpoint
-            ask_size: Decimal::ZERO,
-            tokens,
-            question: poly_resp.question,
-        })
-    }
+    // fetch_market_data logic removed, delegating to client
 }
 
 #[async_trait]
@@ -120,7 +48,7 @@ impl Actor for MarketPricingActor {
                 res = rx.recv() => {
                     match res {
                         Ok(req) => {
-                            match self.fetch_market_data(&req.market_id).await {
+                            match self.client.fetch_market_data(&req.market_id).await {
                                 Ok(snap) => {
                                     if let Err(e) = self.bus.market_data.publish(snap).await {
                                         error!("Failed to publish market data: {}", e);

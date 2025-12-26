@@ -8,6 +8,6 @@ RUN cargo build --release
 
 # ---- Runtime stage (distroless) ----
 FROM gcr.io/distroless/cc-debian12
-COPY --from=build /app/target/release/ingestor /usr/local/bin/ingestor
-ENTRYPOINT ["/usr/local/bin/ingestor"]
+COPY --from=build /app/target/release/polymind /usr/local/bin/polymind
+ENTRYPOINT ["/usr/local/bin/polymind"]
 

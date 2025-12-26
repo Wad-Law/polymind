@@ -111,7 +111,7 @@ pub struct PolyCfg {
     pub token_decimals: u32,
     #[serde(rename = "rpcUrl")]
     pub rpc_url: String,
-    #[serde(rename = "dataApiUrl", default = "default_data_api_url")]
+    #[serde(rename = "dataApiUrl")]
     pub data_api_url: String,
 }
 
@@ -139,9 +139,6 @@ fn default_page_limit() -> u32 {
 }
 fn default_token_decimals() -> u32 {
     6
-}
-fn default_data_api_url() -> String {
-    "https://data-api.polymarket.com".to_string()
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -208,35 +205,16 @@ impl Default for FinJuiceCfg {
 
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct StrategyCfg {
-    #[serde(default)]
-    #[allow(dead_code)]
-    pub calibration: CalibrationCfg,
-    #[serde(default = "default_bankroll")]
-    pub bankroll: f64,
+    #[serde(default = "default_bankroll", rename = "simBankroll")]
+    pub sim_bankroll: f64,
+    #[serde(default, rename = "simExecution")]
+    pub sim_execution: bool,
+    #[serde(default, rename = "simMarketData")]
+    pub sim_market_data: bool,
 }
 
 fn default_bankroll() -> f64 {
     1000.0
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct CalibrationCfg {
-    #[allow(dead_code)]
-    pub a: f64,
-    #[allow(dead_code)]
-    pub b: f64,
-    #[allow(dead_code)]
-    pub lambda: f64,
-}
-
-impl Default for CalibrationCfg {
-    fn default() -> Self {
-        Self {
-            a: -3.0,
-            b: 6.0,
-            lambda: 0.5,
-        }
-    }
 }
 
 impl AppCfg {

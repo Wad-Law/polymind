@@ -1,6 +1,6 @@
-# Ingestor: Autonomous News Trading Bot
+# Polymind: Autonomous News Trading Bot
 
-Ingestor is a high-performance, event-driven trading bot written in Rust. It is designed to autonomously ingest real-time news, analyze sentiment and relevance using NLP and LLMs, and execute trades on prediction markets (specifically Polymarket) based on probabilistic signals.
+Polymind is a high-performance, event-driven trading bot written in Rust. It is designed to autonomously ingest real-time news, analyze sentiment and relevance using NLP and LLMs, and execute trades on prediction markets (specifically Polymarket) based on probabilistic signals.
 
 ## 🚀 Key Features
 
