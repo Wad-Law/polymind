@@ -35,11 +35,11 @@ impl KellySizer {
             let (side, raw_kelly) = if c.probability > c.market_price {
                 // Buy Yes
                 let k = (c.probability - c.market_price) / (Decimal::ONE - c.market_price);
-                (TradeSide::BuyYes, k)
+                (TradeSide::Buy("Yes".to_string()), k)
             } else {
                 // Buy No
                 let k = (c.market_price - c.probability) / c.market_price;
-                (TradeSide::BuyNo, k)
+                (TradeSide::Buy("No".to_string()), k)
             };
 
             // If edge is negative or zero (shouldn't happen with above logic unless equal), fraction is 0
@@ -84,7 +84,7 @@ mod tests {
         let decisions = sizer.size_positions(candidates);
         assert_eq!(decisions.len(), 1);
         let d = &decisions[0];
-        assert_eq!(d.side, TradeSide::BuyYes);
+        assert_eq!(d.side, TradeSide::Buy("Yes".to_string()));
         // Kelly = (0.6 - 0.5) / 0.5 = 0.2
         assert!((d.kelly_fraction - Decimal::new(2, 1)).abs() < Decimal::new(1, 6));
         // Half Kelly = 0.1, Cap = 0.05 -> 0.05
@@ -106,7 +106,7 @@ mod tests {
         let decisions = sizer.size_positions(candidates);
         assert_eq!(decisions.len(), 1);
         let d = &decisions[0];
-        assert_eq!(d.side, TradeSide::BuyNo);
+        assert_eq!(d.side, TradeSide::Buy("No".to_string()));
         // Kelly = (0.5 - 0.2) / 0.5 = 0.6
         assert!((d.kelly_fraction - Decimal::new(6, 1)).abs() < Decimal::new(1, 6));
         // Half Kelly = 0.3, Cap = 0.05 -> 0.05

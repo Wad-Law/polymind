@@ -61,6 +61,23 @@ impl ExactDuplicateDetector {
         self.cache.put(hash, now);
         false
     }
+    pub fn hydrate(&mut self, items: Vec<(String, String)>) {
+        let now = Utc::now().timestamp();
+        for (title, description) in items {
+            // Reconstruct minimal RawNews for normalization
+            let news = RawNews {
+                title,
+                description,
+                url: "".to_string(),
+                feed: "".to_string(),
+                published: None,
+                labels: vec![],
+            };
+            let normalized = normalize_news_item_dedup_stage(&news);
+            let hash = Self::hash_str(&normalized);
+            self.cache.put(hash, now);
+        }
+    }
 }
 
 #[cfg(test)]

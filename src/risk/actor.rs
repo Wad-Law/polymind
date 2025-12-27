@@ -97,7 +97,7 @@ impl Actor for RiskActor {
         loop {
             tokio::select! {
                 _ = self.shutdown.cancelled() => {
-                    info!("RiskActor shutdown requested");
+                    info!("RiskActor: shutdown requested");
                     break;
                 }
 
@@ -119,10 +119,10 @@ impl Actor for RiskActor {
                             }
 
                             if let Err(e) = self.check_risk().await {
-                                error!("Risk check failed: {}", e);
+                                error!("RiskActor: Risk check failed: {}", e);
                             }
                         }
-                        Err(e) => error!("Balance stream error: {}", e),
+                        Err(e) => error!("RiskActor: Balance stream error: {}", e),
                     }
                 }
 
@@ -133,7 +133,7 @@ impl Actor for RiskActor {
                             // In future: Track open positions exposure vs Bankroll
                             info!("RiskActor observed execution: {:?}", exec.client_order_id);
                         }
-                        Err(e) => error!("Execution stream error: {}", e),
+                        Err(e) => error!("RiskActor: Execution stream error: {}", e),
                     }
                 }
             }

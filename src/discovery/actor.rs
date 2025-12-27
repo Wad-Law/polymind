@@ -7,6 +7,7 @@ use reqwest::Client;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
+use tracing::log::warn;
 
 pub struct MarketDiscoveryActor {
     pub bus: Bus,
@@ -31,9 +32,10 @@ impl MarketDiscoveryActor {
     }
 
     async fn fetch_events_page(&self, offset: u32) -> Result<Vec<PolyMarketEvent>> {
+        let url = self.poly_cfg.gamma_events_url.clone();
         let res = self
             .client
-            .get(self.poly_cfg.gamma_events_url.clone())
+            .get(&url)
             .query(&[
                 ("order", "id"),
                 ("ascending", "false"),
@@ -43,39 +45,68 @@ impl MarketDiscoveryActor {
             ])
             .send()
             .await
-            .context("requesting events")?
-            .error_for_status()
-            .context("received non-success status for events request")?
+            .context("requesting polymarket events")?;
+
+        if !res.status().is_success() {
+            let status = res.status();
+            let body = res.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Polymarket API error: status={}, url={}, offset={}, body={}",
+                status, url, offset, body
+            );
+        }
+
+        let events = res
             .json::<Vec<PolyMarketEvent>>()
             .await
-            .context("parsing events response")?;
-        Ok(res)
+            .context("parsing polymarket events response")?;
+        Ok(events)
     }
 
     async fn fetch_all_active_polymarket_events(&self) -> Result<Vec<PolyMarketEvent>> {
         let mut rows = Vec::new();
         let mut offset = 0;
+        let mut consecutive_errors = 0;
 
         loop {
-            let page = self.fetch_events_page(offset).await?;
+            // Be polite to the API
+            if offset > 0 {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+            }
 
-            if page.is_empty() {
-                break;
+            match self.fetch_events_page(offset).await {
+                Ok(page) => {
+                    consecutive_errors = 0; // Reset error count on success
+                    if page.is_empty() {
+                        break;
+                    }
+                    let len = page.len();
+                    rows.extend(page);
+                    
+                    if len < self.poly_cfg.page_limit as usize {
+                        break;
+                    }
+                    offset += self.poly_cfg.page_limit;
+                }
+                Err(e) => {
+                    error!(
+                        "MarketDiscoveryActor: Failed to fetch events page at offset {}: {}. Retrying...",
+                        offset, e
+                    );
+                    consecutive_errors += 1;
+                    if consecutive_errors >= 3 {
+                        error!("MarketDiscoveryActor: Too many consecutive errors. Returning partial results.");
+                        break;
+                    }
+                    // Backoff before retry
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                }
             }
-            let len = page.len();
-            for ev in page {
-                rows.push(ev);
-            }
-            if len < self.poly_cfg.page_limit as usize {
-                break;
-            }
-            offset += self.poly_cfg.page_limit;
         }
         Ok(rows)
     }
 }
 
-#[async_trait::async_trait]
 #[async_trait::async_trait]
 impl Actor for MarketDiscoveryActor {
     async fn run(mut self) -> Result<()> {
@@ -88,7 +119,7 @@ impl Actor for MarketDiscoveryActor {
             tokio::select! {
                 // Graceful shutdown signal
                 _ = self.shutdown.cancelled() => {
-                    info!("PolyActor: shutdown requested");
+                    info!("MarketDiscoveryActor: shutdown requested");
                     break;
                 }
 
@@ -96,6 +127,12 @@ impl Actor for MarketDiscoveryActor {
                 _ = tick.tick() => {
                      match self.fetch_all_active_polymarket_events().await  {
                         Ok(poly_events) => {
+                            if poly_events.is_empty() {
+                                warn!("MarketDiscoveryActor: Fetched 0 events. MarketIndex might be empty.");
+                            } else {
+                                info!("MarketDiscoveryActor: Fetched {} events.", poly_events.len());
+                            }
+
                             let bus = self.bus.clone();
                             let publish_futs = poly_events.into_iter().map(
                                 move |ev| {
@@ -112,12 +149,12 @@ impl Actor for MarketDiscoveryActor {
                             for res in results {
                                 if let Err(e) = res {
                                     // Either `return Err(e)` or just log and continue
-                                    error!(?e, "publish to polymarket_events failed");
+                                    error!(?e, "MarketDiscoveryActor: publish to polymarket_events failed");
                                 }
                             }
                         }
                         Err(e) => {
-                            error!("PolyActor: failed to fetch active poly market event: {}", e);
+                            error!("MarketDiscoveryActor: failed to fetch active poly market event: {}", e);
                             // backoff to avoid hot loop on repeated failures
                             tokio::time::sleep(Duration::from_secs(5)).await;
                         }
@@ -125,7 +162,7 @@ impl Actor for MarketDiscoveryActor {
                 }
             }
         }
-        info!("PolyActor stopped cleanly");
+        info!("MarketDiscoveryActor stopped cleanly");
         Ok(())
     }
 }

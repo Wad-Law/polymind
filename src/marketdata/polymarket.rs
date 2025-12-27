@@ -8,16 +8,12 @@ use rust_decimal::Decimal;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
-struct PolyToken {
-    token_id: String,
-    outcome: String,
-    price: Decimal,
-}
-
-#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct PolyMarketResponse {
     id: String,
-    tokens: Option<Vec<PolyToken>>,
+    clob_token_ids: Option<String>,
+    outcomes: Option<String>,
+    outcome_prices: Option<String>,
     best_bid: Option<Decimal>,
     best_ask: Option<Decimal>,
     question: String,
@@ -56,15 +52,32 @@ impl MarketDataClient for PolyMarketDataClient {
 
         let poly_resp: PolyMarketResponse = resp.json().await.context("parsing market data")?;
 
-        let tokens = poly_resp.tokens.map(|ts| {
-            ts.into_iter()
-                .map(|t| crate::core::types::MarketToken {
-                    token_id: t.token_id,
-                    outcome: t.outcome,
-                    price: t.price,
-                })
-                .collect()
-        });
+        // Parse tokens from stringified JSON fields
+        let mut tokens = None;
+        if let (Some(ids_str), Some(outcomes_str), Some(prices_str)) = (
+            &poly_resp.clob_token_ids,
+            &poly_resp.outcomes,
+            &poly_resp.outcome_prices,
+        ) {
+            let ids: Vec<String> = serde_json::from_str(ids_str).unwrap_or_default();
+            let outcomes: Vec<String> = serde_json::from_str(outcomes_str).unwrap_or_default();
+            let prices: Vec<String> = serde_json::from_str(prices_str).unwrap_or_default();
+            
+            let mut tokens_vec = Vec::new();
+            for i in 0..ids.len() {
+                if i < outcomes.len() && i < prices.len() {
+                    let price = std::str::FromStr::from_str(&prices[i]).unwrap_or(Decimal::ZERO);
+                    tokens_vec.push(crate::core::types::MarketToken {
+                        token_id: ids[i].clone(),
+                        outcome: outcomes[i].clone(),
+                        price,
+                    });
+                }
+            }
+            if !tokens_vec.is_empty() {
+                tokens = Some(tokens_vec);
+            }
+        }
 
         Ok(MarketDataSnap {
             market_id: poly_resp.id,

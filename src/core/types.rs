@@ -112,6 +112,53 @@ pub struct PolyMarketMarket {
     pub question: Option<String>,
     #[serde(default)]
     pub description: Option<String>,
+    #[serde(default)]
+    pub active: bool,
+    #[serde(default)]
+    pub closed: bool,
+    #[serde(default)]
+    pub archived: bool,
+    #[serde(default)]
+    pub start_date: Option<String>,
+    #[serde(default)]
+    pub end_date: Option<String>,
+    #[serde(default)]
+    pub clobTokenIds: Option<String>,
+    #[serde(default)]
+    pub outcomes: Option<String>,
+    #[serde(default)]
+    pub outcomePrices: Option<String>,
+}
+
+impl PolyMarketMarket {
+    pub fn get_tokens(&self) -> Vec<MarketToken> {
+        let mut tokens_vec = Vec::new();
+
+        if let (Some(ids_str), Some(outcomes_str), Some(prices_str)) = (
+            &self.clobTokenIds,
+            &self.outcomes,
+            &self.outcomePrices,
+        ) {
+            // Parse JSON strings
+            let ids: Vec<String> = serde_json::from_str(ids_str).unwrap_or_default();
+            let outcomes: Vec<String> = serde_json::from_str(outcomes_str).unwrap_or_default();
+            let prices: Vec<String> = serde_json::from_str(prices_str).unwrap_or_default();
+
+            for i in 0..ids.len() {
+                if i < outcomes.len() && i < prices.len() {
+                    let price = rust_decimal::Decimal::from_str_exact(&prices[i])
+                        .unwrap_or(rust_decimal::Decimal::ZERO);
+                    
+                    tokens_vec.push(MarketToken {
+                        token_id: ids[i].clone(),
+                        outcome: outcomes[i].clone(),
+                        price,
+                    });
+                }
+            }
+        }
+        tokens_vec
+    }
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Position {

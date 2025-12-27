@@ -3,6 +3,7 @@ use chrono::Utc;
 use lru::LruCache;
 use std::hash::{Hash, Hasher};
 use std::num::{NonZero, NonZeroUsize};
+use crate::strategy::tokenization::TokenizationConfig;
 
 /// Configuration for the exact duplication pipeline
 #[derive(Debug, Clone)]
@@ -76,6 +77,29 @@ impl SimHashCache {
     pub fn insert(&mut self, hash: u64) {
         let now = Utc::now().timestamp();
         self.cache.put(hash, now);
+    }
+
+    pub fn hydrate(&mut self, items: Vec<(String, String)>, cfg: &TokenizationConfig) {
+        use crate::core::types::RawNews;
+        use crate::strategy::tokenization::TokenizedNews;
+
+        let now = Utc::now().timestamp();
+
+        for (title, description) in items {
+            let news = RawNews {
+                title,
+                description,
+                url: "".to_string(),
+                feed: "".to_string(),
+                published: None,
+                labels: vec![],
+            };
+
+            let tokenized = TokenizedNews::from_raw(news, &cfg);
+            // using the same tokens logic as handle_news_event:
+            let h = self.sim_hash(&tokenized.tokens);
+            self.cache.put(h, now);
+        }
     }
 
     /// Compute a 64-bit SimHash from a list of tokens.

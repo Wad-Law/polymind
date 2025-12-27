@@ -64,6 +64,16 @@ impl MarketIndex {
         })
     }
 
+    pub fn delete_market(&mut self, market_id: &str) -> Result<()> {
+        let term = Term::from_field_text(self.id, market_id);
+        self.writer.delete_term(term);
+        self.writer.commit()?;
+
+        // Remove from semantic cache
+        self.vectors.remove(market_id);
+        Ok(())
+    }
+
     pub fn add_market(
         &mut self,
         market_id: &str,
@@ -72,6 +82,10 @@ impl MarketIndex {
         tags_text: &str,
         res_date: Option<i64>,
     ) -> Result<()> {
+        // First delete to ensure update/replace
+        let term = Term::from_field_text(self.id, market_id);
+        self.writer.delete_term(term);
+
         let mut doc = TantivyDocument::default();
         doc.add_text(self.title, title_text);
         doc.add_text(self.description, desc_text);

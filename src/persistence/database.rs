@@ -47,6 +47,25 @@ impl Database {
         .execute(&self.pool)
         .await?;
 
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS markets (
+                id TEXT PRIMARY KEY,
+                question TEXT NOT NULL,
+                description TEXT,
+                start_date TEXT,
+                end_date TEXT,
+                active BOOLEAN,
+                closed BOOLEAN,
+                archived BOOLEAN,
+                tokens JSONB, -- Store tokens as JSONB array
+                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
         // Signals
         sqlx::query(
             r#"
@@ -57,6 +76,8 @@ impl Database {
                 sentiment TEXT NOT NULL,
                 confidence FLOAT NOT NULL,
                 raw_json TEXT NOT NULL,
+                prompt TEXT, -- Add prompt for auditability
+                model TEXT,  -- Add model name for auditability
                 created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
             )
             "#,
@@ -159,9 +180,8 @@ impl Database {
         event_id: Option<i64>,
         decision: &crate::strategy::types::SizedDecision,
     ) -> Result<()> {
-        let side = match decision.side {
-            crate::strategy::types::TradeSide::BuyYes => "BuyYes",
-            crate::strategy::types::TradeSide::BuyNo => "BuyNo",
+        let side = match &decision.side {
+            crate::strategy::types::TradeSide::Buy(outcome) => outcome.as_str(),
         };
         // Decimal to string
         let score = decision.candidate.score.to_string();
@@ -213,17 +233,49 @@ impl Database {
         Ok(rec.get("id"))
     }
 
+    pub async fn save_market(&self, market: &crate::core::types::PolyMarketMarket) -> Result<()> {
+        let tokens_vec = market.get_tokens();
+        let tokens_json = serde_json::to_value(&tokens_vec).unwrap_or(serde_json::Value::Null);
+
+        sqlx::query(
+            r#"
+            INSERT INTO markets (id, question, description, start_date, end_date, active, closed, archived, tokens)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            ON CONFLICT (id) DO UPDATE SET
+                question = EXCLUDED.question,
+                description = EXCLUDED.description,
+                active = EXCLUDED.active,
+                closed = EXCLUDED.closed,
+                archived = EXCLUDED.archived
+            "#,
+        )
+        .bind(&market.id)
+        .bind(&market.question)
+        .bind(&market.description)
+        .bind(&market.start_date)
+        .bind(&market.end_date)
+        .bind(market.active)
+        .bind(market.closed)
+        .bind(market.archived)
+        .bind(tokens_json)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     pub async fn save_signal(
         &self,
         event_id: i64,
         market_id: &str,
         signal: &crate::llm::SignalResponse,
+        prompt: &str,
+        model: &str,
     ) -> Result<()> {
         let json = serde_json::to_string(signal)?;
         sqlx::query(
             r#"
-            INSERT INTO signals (event_id, market_id, sentiment, confidence, raw_json)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO signals (event_id, market_id, sentiment, confidence, raw_json, prompt, model)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             "#,
         )
         .bind(event_id)
@@ -231,6 +283,8 @@ impl Database {
         .bind(&signal.sentiment)
         .bind(signal.confidence)
         .bind(json)
+        .bind(prompt)
+        .bind(model)
         .execute(&self.pool)
         .await?;
         Ok(())
@@ -368,5 +422,27 @@ impl Database {
             });
         }
         Ok(positions)
+    }
+
+    pub async fn load_recent_events(&self, limit: i64) -> Result<Vec<(String, String)>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT title, description
+            FROM events
+            ORDER BY created_at DESC
+            LIMIT $1
+            "#,
+        )
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut events = Vec::new();
+        for row in rows {
+            let title: String = row.get("title");
+            let description: Option<String> = row.get("description");
+            events.push((title, description.unwrap_or_default()));
+        }
+        Ok(events)
     }
 }

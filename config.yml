@@ -12,22 +12,38 @@ polymarket:
   rpcUrl: "https://polygon-rpc.com"
   dataApiUrl: "https://data-api.polymarket.com"
   marketListRefresh: "30s"
-  pageLimit: 100
+  pageLimit: 500
 
 rss:
-  refresh: "5s"
+  refresh: "10s"
   concurrency: 16
   feeds:
+#    - id: "bbc"
+#      url: "http://feeds.bbci.co.uk/news/world/rss.xml"
     - id: "cnn"
-      url: "http://rss.cnn.com/rss/edition.rss"
-    - id: "wsj"
-      url: "https://feeds.a.dj.com/rss/RSSWorldNews.xml"
+      url: "http://rss.cnn.com/rss/edition_world.rss"
+    - id: "cnbc"
+      url: "https://www.cnbc.com/id/100727362/device/rss/rss.html"
+#    - id: "ndtv"
+#      url: "http://feeds.feedburner.com/ndtvnews-world-news"
+    - id: "nyt"
+      url: "https://rss.nytimes.com/services/xml/rss/nyt/World.xml"
+#    - id: "wpost"
+#      url: "http://feeds.washingtonpost.com/rss/world"
+    - id: "google"
+      url: "https://news.google.com/rss"
+#    - id: "reddit"
+#      url: "https://www.reddit.com/r/worldnews/.rss"
+    - id: "yahoo-fin"
+      url: "https://news.yahoo.com/rss/finance"
+    - id: "guardian"
+      url: "https://www.theguardian.com/world/rss"
 
 financialJuice:
   baseUrl: "https://www.financialjuice.com/"
   altUrl: "https://live.financialjuice.com/FJService.asmx/Startup"
   info: "%22EAAAADyxhXfpGMQesDtGBUqmT8eYX0feSuQ3O7zMSuHnGXYhgVERjD1oCDt1gCc7VA%2B2A3rh2MNmMLOm3H9erZ%2Fncqf1JKZe6J%2BgB9CACwSLODRlnVZjKuBJB%2FHfF7%2BpXRPGjZcwgloeGsLbUb%2BA6tnMd7gYKDoXbUY7YcF9GJUrpzJHpSbXgxA90MVcitNMEjXjALB6tasgaT53eSIYy%2FC%2FJAtadH1Fk7fneZCwfcz6mSMGfEzWlAIPlJANxkfKayBJ6SMH%2BHFh5HflgrpWgQvQGb2mwPgaCiaXwTJ%2Ba5SBv0HnfhEJixMY9GD9%2BlYX9FUodIiaVmrSZzKKdL%2BDhjpCOc0%3D%22"
-  refresh: "5s"
+  refresh: "10s"
 
 strategy:
   simExecution: true
@@ -36,5 +52,5 @@ strategy:
   topCandidates: 5
 
 llm:
-  model: "gpt-4o-mini"
+  model: "gpt-5-nano"
   baseUrl: "https://api.openai.com/v1"

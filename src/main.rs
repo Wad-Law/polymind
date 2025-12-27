@@ -16,10 +16,7 @@ use bus::types::Bus;
 use config::config::AppCfg;
 use core::types::Actor;
 use discovery::actor::MarketDiscoveryActor;
-use execution::actor::ExecutionActor;
-use execution::polymarket::PolyExecutionClient;
 use finjuice::actor::FinJuiceActor;
-use marketdata::actor::MarketPricingActor;
 use reqwest::Client;
 use rss::actor::RssActor;
 
@@ -27,6 +24,20 @@ use risk::actor::RiskActor;
 use strategy::actor::StrategyActor;
 use tokio_util::sync::CancellationToken;
 use tracing::{Instrument, error, info, info_span};
+
+use marketdata::client::MarketDataClient;
+use marketdata::polymarket::PolyMarketDataClient;
+use marketdata::simulator::SimMarketDataClient;
+use marketdata::actor::MarketPricingActor;
+
+use execution::client::ExecutionClient;
+use execution::simulator::SimExecutionClient;
+use execution::actor::ExecutionActor;
+use execution::polymarket::PolyExecutionClient;
+use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive;
+
+use persistence::database::Database;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -53,6 +64,7 @@ async fn main() -> Result<()> {
 
     info!("Initializing Client");
     let client = Client::builder()
+        .use_rustls_tls()
         .user_agent(cfg.http.user_agent.clone())
         .pool_idle_timeout(cfg.http.pool_idle_timeout)
         .pool_max_idle_per_host(cfg.http.pool_max_idle_per_host)
@@ -66,7 +78,7 @@ async fn main() -> Result<()> {
         bus.clone(),
         client.clone(),
         cfg.polymarket.clone(),
-        shutdown.clone(),
+        shutdown.clone()
     );
     let rss = RssActor::new(
         bus.clone(),
@@ -80,15 +92,12 @@ async fn main() -> Result<()> {
         cfg.financial_juice.clone(),
         shutdown.clone(),
     );
-    use marketdata::client::MarketDataClient;
-    use marketdata::polymarket::PolyMarketDataClient;
-    use marketdata::simulator::SimMarketDataClient;
 
     let md_client: std::sync::Arc<dyn MarketDataClient> = if cfg.strategy.sim_market_data {
-        info!("Using Simulated Market Data");
+        info!("Running in SIMULATED MARKET DATA mode");
         std::sync::Arc::new(SimMarketDataClient::new())
     } else {
-        info!("Using Live Polymarket Data");
+        info!("Running in LIVE MARKET DATA mode");
         std::sync::Arc::new(PolyMarketDataClient::new(
             cfg.polymarket.clone(),
             client.clone(),
@@ -103,23 +112,18 @@ async fn main() -> Result<()> {
     let db_url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgres://user:password@localhost:5432/polymind".to_string());
 
-    use persistence::database::Database;
     let db = Database::new(&db_url)
         .await
         .expect("Failed to init database");
 
     let strat = StrategyActor::new(bus.clone(), shutdown.clone(), &cfg, db.clone());
-    use execution::client::ExecutionClient;
-    use execution::simulator::SimExecutionClient;
-    use rust_decimal::Decimal;
-    use rust_decimal::prelude::FromPrimitive;
 
     let exec_client: std::sync::Arc<dyn ExecutionClient> = if cfg.strategy.sim_execution {
         info!("Running in SIMULATED EXECUTION mode");
         let initial_cash = Decimal::from_f64(cfg.strategy.sim_bankroll).unwrap_or(Decimal::ZERO);
         std::sync::Arc::new(SimExecutionClient::new(initial_cash))
     } else {
-        info!("Running in LIVE EXECUTION mode connected to Polymarket (Real Money)");
+        info!("Running in LIVE EXECUTION mode");
         std::sync::Arc::new(PolyExecutionClient::new(
             cfg.polymarket.clone(),
             client.clone(),

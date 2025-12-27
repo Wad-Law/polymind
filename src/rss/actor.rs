@@ -34,11 +34,11 @@ impl RssActor {
                     .get(&feed.url)
                     .send()
                     .await
-                    .with_context(|| format!("Failed to GET {}", feed.url))?;
+                    .with_context(|| format!("RssActor: Failed to GET {}", feed.url))?;
 
                 let body = resp.text().await?;
                 let channel = Channel::read_from(body.as_bytes())
-                    .with_context(|| format!("Failed to parse RSS from {}", feed.url))?;
+                    .with_context(|| format!("RssActor: Failed to parse RSS from {}", feed.url))?;
 
                 let items = channel.items.into_iter().map(|item| RawNews {
                     feed: feed.id.clone(),
@@ -67,7 +67,7 @@ impl RssActor {
             match result {
                 Ok(mut items) => all_news.append(&mut items),
                 Err(e) => {
-                   error!("RSS fetch failed: {:?}", e);
+                   error!("RssActor: fetch failed: {:?}", e);
                 }
             }
         }
@@ -109,7 +109,7 @@ impl Actor for RssActor {
                             .buffer_unordered(32)       // cap concurrency
                             .for_each(|res| async {
                                 if let Err(e) = res {
-                                    error!(?e, "publish to raw_news failed");
+                                    error!(?e, "RssActor: publish to raw_news failed");
                                 }
                             })
                             .await;

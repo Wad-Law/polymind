@@ -26,30 +26,32 @@ impl LlmClient {
         }
     }
 
-    pub async fn analyze(&self, news_title: &str, market_question: &str) -> Result<SignalResponse> {
+    pub fn model(&self) -> &str {
+        &self.cfg.model
+    }
+
+    pub async fn analyze(&self, news_title: &str, market_question: &str, outcomes: &[String]) -> Result<(SignalResponse, String)> {
+        let outcomes_list = outcomes.join(", ");
         let prompt = format!(
-            "You are a financial analyst specializing in event-driven market prediction. Analyze the following news in the context of the prediction market question.
+            "You are a financial analyst specializing in event-driven market prediction. Analyze the following news to determine if it predicts a specific outcome for the market.
 
             News: \"{}\"
             Market Question: \"{}\"
+            Possible Outcomes: [{}]
 
             Perform the following analysis step-by-step:
-            1. Identify the key entities and events in the news.
-            2. Compare this against historical precedents or market expectations.
-            3. List 3 reasons why this news might imply 'Yes' (increases probability).
-            4. List 3 reasons why this news might imply 'No' (decreases probability).
-            5. Assign a weight (1-10) to each reason based on its impact.
-            6. Synthesize these reasons into a final probability adjustment.
+            1. Identify key entities/events in the news.
+            2. Determine if this news explicitly supports one of the Possible Outcomes.
+            3. If the news creates a high conviction that a specific outcome will occur (or win), select it.
+            4. If the news is irrelevant or ambiguous, select 'None'.
 
-            Based on this analysis, determine the sentiment and new confidence level.
-            
             Output strictly valid JSON with fields: 
-            - 'sentiment' (Positive/Negative/Neutral), 
-            - 'confidence' (0.0 to 1.0, representing the strength of the move), 
-            - 'reasoning' (A concise summary of your step-by-step analysis).
+            - 'sentiment' (The exact string of the selected outcome, or 'None'), 
+            - 'confidence' (0.0 to 1.0, representing the strength of the prediction), 
+            - 'reasoning' (A concise summary of your analysis).
 
-            'Positive' means 'Yes' is more likely. 'Negative' means 'No' is more likely (or 'Yes' is less likely).",
-            news_title, market_question
+            Example: If outcomes are [\"Yes\", \"No\"] and news strongly supports Yes, sentiment should be \"Yes\".",
+            news_title, market_question, outcomes_list
         );
 
         let req_body = json!({
@@ -97,6 +99,6 @@ impl LlmClient {
         let signal: SignalResponse = serde_json::from_str(clean_content)
             .context(format!("Failed to parse LLM JSON: {}", clean_content))?;
 
-        Ok(signal)
+        Ok((signal, prompt))
     }
 }

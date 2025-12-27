@@ -40,6 +40,7 @@ pub struct StrategyActor {
     pub portfolio: Portfolio,
     pub status: crate::core::types::SystemStatus,
     pub top_candidates: usize,
+    pub tokenization_config: TokenizationConfig,
 }
 
 impl StrategyActor {
@@ -70,6 +71,7 @@ impl StrategyActor {
             },
             status: crate::core::types::SystemStatus::Active,
             top_candidates: cfg.strategy.top_candidates,
+            tokenization_config: TokenizationConfig::default(),
         }
     }
 
@@ -113,7 +115,6 @@ impl StrategyActor {
 
         // 2. Cheap exact dedup to eliminate trivial duplicates
         if self.detector.is_duplicate(raw_news) {
-            warn!("Skipping duplicate news.");
             return order; // Return empty if dup
         } else {
             info!("New event — continue pipeline.");
@@ -129,8 +130,7 @@ impl StrategyActor {
         };
 
         // 2. Tokenize
-        let cfg = TokenizationConfig::default();
-        let tokenized_news = TokenizedNews::from_raw(raw_news.clone(), &cfg);
+        let tokenized_news = TokenizedNews::from_raw(raw_news.clone(), &self.tokenization_config);
 
         // 3. Semantic dedup (SimHash) to eliminate rewritten versions
         let h = self.sim_hash_cache.sim_hash(&tokenized_news.tokens);
@@ -148,6 +148,11 @@ impl StrategyActor {
         let raw_candidates =
             self.retrieve_candidates(tokenized_news.tokens.as_slice(), &raw_news.title);
 
+        if raw_candidates.is_empty() {
+            warn!("No candidates found for news: ({}). Skipping.", raw_news.title);
+            return order;
+        }
+
         // 6. Hard filters
         let entities = &feat.entities;
         let time_window = &feat.time_window;
@@ -162,8 +167,24 @@ impl StrategyActor {
             .map(|c| c.clone())
             .collect::<Vec<_>>();
 
+        info!(
+            "Top {} candidates after filtering: {:?}",
+            top_candidates_for_data.len(),
+            top_candidates_for_data
+                .iter()
+                .map(|c| &c.market_id)
+                .collect::<Vec<_>>()
+        );
+
         // Ensure we have market data (Price + Question) for these candidates
         // Note: We need to convert back to RawCandidate for ensure_market_data or just pass cloned vec
+        info!(
+            "Ensuring market data for: {:?}",
+            top_candidates_for_data
+                .iter()
+                .map(|c| &c.market_id)
+                .collect::<Vec<_>>()
+        );
         self.ensure_market_data(&top_candidates_for_data).await;
 
         // 7. Analyst (LLM Scoring)
@@ -305,20 +326,23 @@ impl StrategyActor {
                 .get(&decision.candidate.candidate.market_id)
             {
                 if let Some(tokens) = &snap.tokens {
-                    let target_outcome = match decision.side {
-                        TradeSide::BuyYes => "Yes",
-                        TradeSide::BuyNo => "No",
+                    let target_outcome = match &decision.side {
+                        TradeSide::Buy(outcome) => outcome,
                     };
-                    // Case-insensitive match just in case
+
+                    // Case-insensitive match + Robust check (e.g. "Yes" vs "True")
+                    // For now, strict case-insensitive match on the outcome label.
                     if let Some(t) = tokens
                         .iter()
                         .find(|t| t.outcome.eq_ignore_ascii_case(target_outcome))
                     {
                         token_id = Some(t.token_id.clone());
                     } else {
+                        // Fallback: Log available outcomes to help debug multi-choice issues
+                        let available: Vec<String> = tokens.iter().map(|t| t.outcome.clone()).collect();
                         warn!(
-                            "Token ID not found for outcome {} in market {}",
-                            target_outcome, decision.candidate.candidate.market_id
+                            "Token ID not found for outcome '{}' in market {}. Available: {:?}",
+                            target_outcome, decision.candidate.candidate.market_id, available
                         );
                     }
                 }
@@ -362,47 +386,42 @@ impl StrategyActor {
         self.handle_news_event(news).await.into_iter().next()
     }
 
-    fn decide_from_poly_event(&mut self, event: &PolyMarketEvent) -> Option<Order> {
-        // Structural/reactive logic:
-        // - reindex market if needed
-        // - update cached metadata
-        // - adjust risk/execution if event impacts position
-        // - no "matching" pipeline here
-
-        // If your PolyMarketEvent represents:
-        // - Market creation → you should update your Tantivy BM25 index
-        // - Market metadata update → re-index that specific market
-        // - Market resolution → update calibration labels (score → outcome)
-        // - Volume/liquidity update → risk & execution logic
-        // - Odds movement → internal signal, not external news
-        // Then sending it through the news matching pipeline makes no sense.
-        //
-        // Instead, it belongs in:
-        // - index update logic
-        // - calibration storage
-        // - risk/execution adjustment logic
-
-        // Update index if it's a market update/creation
-        // Update index if it's a market update/creation
+    async fn decide_from_poly_event(&mut self, event: &PolyMarketEvent) -> Option<Order> {
         if let Some(markets) = &event.markets {
             for market in markets {
-                let question = market
-                    .question
-                    .as_deref()
-                    .or(event.title.as_deref())
-                    .unwrap_or("");
-                let description = market
-                    .description
-                    .as_deref()
-                    .or(event.description.as_deref())
-                    .unwrap_or("");
+                // Persist Market
+                if let Err(e) = self.db.save_market(&market).await {
+                    error!("Failed to save market {}: {}", market.id, e);
+                }
 
-                if !question.is_empty() {
-                    if let Err(e) =
-                        self.market_index
-                            .add_market(&market.id, question, description, "", None)
-                    {
-                        error!("Failed to index market {}: {}", market.id, e);
+                if market.closed {
+                    // Remove from index if closed
+                    if let Err(e) = self.market_index.delete_market(&market.id) {
+                        error!("Failed to delete closed market {}: {}", market.id, e);
+                    } else {
+                        info!("MarketIndex: Removed closed market {}", market.id);
+                    }
+                } else {
+                    let question = market
+                        .question
+                        .as_deref()
+                        .or(event.title.as_deref())
+                        .unwrap_or("");
+                    let description = market
+                        .description
+                        .as_deref()
+                        .or(event.description.as_deref())
+                        .unwrap_or("");
+
+                    if !question.is_empty() {
+                        if let Err(e) =
+                            self.market_index
+                                .add_market(&market.id, question, description, "", None)
+                        {
+                            error!("Failed to index market {}: {}", market.id, e);
+                        } else {
+                            info!("MarketIndex: Added/Updated market {}", market.id);
+                        }
                     }
                 }
             }
@@ -515,7 +534,19 @@ impl Actor for StrategyActor {
             }
             Err(e) => {
                 error!("Failed to load positions from database: {}", e);
-                // Decide if we should crash or continue. For now continue but log heavily.
+            }
+        }
+
+        // Hydrate Duplicate Detector
+        match self.db.load_recent_events(10000).await {
+            Ok(events) => {
+                let count = events.len();
+                self.detector.hydrate(events.clone());
+                self.sim_hash_cache.hydrate(events, &self.tokenization_config);
+                info!("Hydrated Deduplication Cache & SimHash with {} recent events", count);
+            }
+            Err(e) => {
+                error!("Failed to load recent events for deduplication: {}", e);
             }
         }
 
@@ -619,7 +650,7 @@ impl Actor for StrategyActor {
                 res = poly_rx.recv() => {
                     match res {
                         Ok(event) => {
-                            if let Some(order) = self.decide_from_poly_event(&event) {
+                            if let Some(order) = self.decide_from_poly_event(&event).await {
                                 self.bus.orders.publish(order).await?;
                             }
                         }
@@ -705,6 +736,7 @@ mod tests {
             top_candidates: 5,
             portfolio: Portfolio::default(),
             status: crate::core::types::SystemStatus::Active,
+            tokenization_config: TokenizationConfig::default(),
         };
 
         // Mock Market Data
@@ -772,7 +804,7 @@ mod tests {
             },
             kelly_fraction: Decimal::new(1, 1), // 0.1
             size_fraction: Decimal::new(1, 1),  // 0.1
-            side: TradeSide::BuyNo,
+            side: TradeSide::Buy("No".to_string()),
         };
 
         let orders_no = actor

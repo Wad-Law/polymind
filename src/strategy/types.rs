@@ -38,13 +38,12 @@ pub struct EdgedCandidate {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TradeSide {
-    BuyYes,
-    BuyNo,
+    Buy(String), // Specific Outcome to buy (e.g. "Yes", "No", "Trump")
 }
 
 impl Default for TradeSide {
     fn default() -> Self {
-        Self::BuyYes
+        Self::Buy("Yes".to_string())
     }
 }
 
