@@ -129,8 +129,9 @@ impl MarketIndex {
         // Simple approach: OR query of all tokens
         let query_str = query_tokens.join(" ");
 
-        let query_parser =
+        let mut query_parser =
             QueryParser::for_index(&self.index, vec![self.title, self.description, self.tags]);
+        query_parser.set_conjunction_by_default();
         let query = query_parser.parse_query(&query_str)?;
 
         let collector = TopDocsStruct::with_limit(limit);
@@ -180,8 +181,12 @@ impl MarketIndex {
         // Sort by score descending
         scored_markets.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-        // Take top K
-        let top_k = scored_markets.into_iter().take(limit);
+        // Filter by threshold (e.g., 0.35) to avoid irrelevant matches
+        let threshold = 0.35;
+        let top_k = scored_markets
+            .into_iter()
+            .filter(|(_, score)| *score >= threshold)
+            .take(limit);
 
         // Retrieve metadata from Tantivy (or we could store it in memory too, but Tantivy is fine)
         let reader = self.index.reader()?;

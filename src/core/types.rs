@@ -118,16 +118,16 @@ pub struct PolyMarketMarket {
     pub closed: bool,
     #[serde(default)]
     pub archived: bool,
-    #[serde(default)]
+    #[serde(default, rename = "startDate")]
     pub start_date: Option<String>,
-    #[serde(default)]
+    #[serde(default, rename = "endDate")]
     pub end_date: Option<String>,
-    #[serde(default)]
-    pub clobTokenIds: Option<String>,
+    #[serde(default, rename = "clobTokenIds")]
+    pub clob_token_ids: Option<String>,
     #[serde(default)]
     pub outcomes: Option<String>,
-    #[serde(default)]
-    pub outcomePrices: Option<String>,
+    #[serde(default, rename = "outcomePrices")]
+    pub outcome_prices: Option<String>,
 }
 
 impl PolyMarketMarket {
@@ -135,7 +135,7 @@ impl PolyMarketMarket {
         let mut tokens_vec = Vec::new();
 
         if let (Some(ids_str), Some(outcomes_str), Some(prices_str)) =
-            (&self.clobTokenIds, &self.outcomes, &self.outcomePrices)
+            (&self.clob_token_ids, &self.outcomes, &self.outcome_prices)
         {
             // Try parsing and log errors if any
             let ids: Vec<String> = match serde_json::from_str(ids_str) {

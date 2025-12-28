@@ -44,7 +44,7 @@ fn default_llm_api_key() -> String {
 }
 
 fn default_llm_model() -> String {
-    "gpt-4o-mini".to_string()
+    "gpt-5-nano".to_string()
 }
 
 fn default_llm_base_url() -> String {

@@ -6,8 +6,8 @@ use futures::{StreamExt, stream};
 use reqwest::Client;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
 use tracing::log::warn;
+use tracing::{error, info};
 
 pub struct MarketDiscoveryActor {
     pub bus: Bus,
@@ -37,9 +37,10 @@ impl MarketDiscoveryActor {
             .client
             .get(&url)
             .query(&[
-                ("order", "id"),
+                ("order", "startDate"),
                 ("ascending", "false"),
                 ("active", "true"),
+                ("closed", "false"),
                 ("limit", &self.poly_cfg.page_limit.to_string()),
                 ("offset", &offset.to_string()),
             ])
@@ -52,7 +53,10 @@ impl MarketDiscoveryActor {
             let body = res.text().await.unwrap_or_default();
             anyhow::bail!(
                 "Polymarket API error: status={}, url={}, offset={}, body={}",
-                status, url, offset, body
+                status,
+                url,
+                offset,
+                body
             );
         }
 
@@ -82,7 +86,7 @@ impl MarketDiscoveryActor {
                     }
                     let len = page.len();
                     rows.extend(page);
-                    
+
                     if len < self.poly_cfg.page_limit as usize {
                         break;
                     }
@@ -95,7 +99,9 @@ impl MarketDiscoveryActor {
                     );
                     consecutive_errors += 1;
                     if consecutive_errors >= 3 {
-                        error!("MarketDiscoveryActor: Too many consecutive errors. Returning partial results.");
+                        error!(
+                            "MarketDiscoveryActor: Too many consecutive errors. Returning partial results."
+                        );
                         break;
                     }
                     // Backoff before retry

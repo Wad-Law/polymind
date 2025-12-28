@@ -1,18 +1,24 @@
 use crate::config::config::LlmCfg;
 use anyhow::{Context, Result};
+use async_openai::{
+    Client,
+    config::OpenAIConfig,
+    types::chat::{
+        ChatCompletionRequestSystemMessageArgs, ChatCompletionRequestUserMessageArgs,
+        CreateChatCompletionRequestArgs,
+    },
+};
 use governor::clock::DefaultClock;
 use governor::state::{InMemoryState, NotKeyed};
 use governor::{Quota, RateLimiter};
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 use tracing::info;
 
 #[derive(Clone)]
 pub struct LlmClient {
-    client: Client,
+    client: Client<OpenAIConfig>,
     cfg: LlmCfg,
     // RateLimiter is internal state, wrap in Arc if LlmClient is cloned (LlmClient derives Clone)
     // governor::RateLimiter is thread-safe and shareable if wrapped or if its state handles it.
@@ -37,8 +43,15 @@ impl LlmClient {
         let quota = Quota::per_minute(rpm);
         let limiter = Arc::new(RateLimiter::direct(quota));
 
+        let openai_config = OpenAIConfig::new()
+            .with_api_key(&cfg.api_key)
+            .with_api_base(&cfg.base_url);
+
+        // async-openai uses reqwest internally, but properly typed
+        let client = Client::with_config(openai_config);
+
         Self {
-            client: Client::new(),
+            client,
             cfg,
             limiter,
         }
@@ -80,39 +93,50 @@ impl LlmClient {
             news_title, market_question, outcomes_list
         );
 
-        let req_body = json!({
-            "model": self.cfg.model,
-            "messages": [
-                {"role": "system", "content": "You are a helpful assistant that outputs JSON."},
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.0
-        });
+        // Models like o1-preview/o1-mini (reasoning models) do NOT support temperature.
+        // gpt-4o, gpt-3.5 do.
+        // We'll optionally set temperature only if not a reasoning model or let the lib handle default.
+        // For strict JSON output, temperature 0 is good for standard GPT models.
 
-        let url = format!("{}/chat/completions", self.cfg.base_url);
+        let request = CreateChatCompletionRequestArgs::default()
+            .model(&self.cfg.model)
+            .messages([
+                ChatCompletionRequestSystemMessageArgs::default()
+                    .content("You are a helpful assistant that outputs JSON.")
+                    .build()?
+                    .into(),
+                ChatCompletionRequestUserMessageArgs::default()
+                    .content(prompt.clone())
+                    .build()?
+                    .into(),
+            ])
+            // Do NOT set temperature for strict reasoning models if using o1 series.
+            // If user uses gpt-4o-mini (default), temperature 0.0 is fine.
+            // Safe bet: set it to 0.0 only if we know it's supported, or just leave it default (1.0).
+            // However, 0.0 is better for deterministic code output.
+            // Let's assume standard models for now as per config default.
+            .build()?;
 
-        // Log for debugging (don't log full key in prod)
-        info!("Calling LLM at {} with model {}", url, self.cfg.model);
+        info!(
+            "Calling LLM at {} with model {}",
+            self.cfg.base_url, self.cfg.model
+        );
 
-        let res = self
+        let response = self
             .client
-            .post(&url)
-            .header("Authorization", format!("Bearer {}", self.cfg.api_key))
-            .json(&req_body)
-            .send()
+            .chat()
+            .create(request)
             .await
             .context("LLM request failed")?;
 
-        if !res.status().is_success() {
-            let err_text = res.text().await?;
-            anyhow::bail!("LLM API error: {}", err_text);
-        }
-
-        let resp_json: serde_json::Value = res.json().await?;
-
-        // Extract content from OpenAI-like response
-        let content_str = resp_json["choices"][0]["message"]["content"]
-            .as_str()
+        let choice = response
+            .choices
+            .first()
+            .context("No choices in LLM response")?;
+        let content_str = choice
+            .message
+            .content
+            .as_ref()
             .context("No content in LLM response")?;
 
         // Parse JSON from content (handle potential markdown code blocks)
@@ -126,5 +150,35 @@ impl LlmClient {
             .context(format!("Failed to parse LLM JSON: {}", clean_content))?;
 
         Ok((signal, prompt))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::config::AppCfg;
+
+    #[tokio::test]
+    #[ignore] // Run with: cargo test -- --ignored
+    async fn test_real_llm_call() -> Result<()> {
+        // Load real config from file (ensure config.yml exists or env vars are set)
+        let mut cfg = AppCfg::load("config.yml").expect("Failed to load config");
+        cfg.llm.api_key = "api-key here".to_string();
+        let client = LlmClient::new(cfg.llm.clone());
+        println!("Testing with model: {}", client.model());
+
+        // Test Case: Clear Positive
+        let news = "Bitcoin officially approved as legal tender in the US today.";
+        let question = "Will Bitcoin be legal tender in the US in 2025?";
+        let outcomes = vec!["Yes".to_string(), "No".to_string()];
+
+        let (signal, _prompt) = client.analyze(news, question, &outcomes).await?;
+
+        println!("Response: {:?}", signal);
+
+        assert_eq!(signal.sentiment, "Yes");
+        assert!(signal.confidence > 0.8);
+
+        Ok(())
     }
 }

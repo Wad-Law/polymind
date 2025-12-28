@@ -12,7 +12,7 @@ polymarket:
   rpcUrl: "https://polygon-rpc.com"
   dataApiUrl: "https://data-api.polymarket.com"
   marketListRefresh: "30s"
-  pageLimit: 500
+  pageLimit: 100
 
 rss:
   refresh: "10s"
