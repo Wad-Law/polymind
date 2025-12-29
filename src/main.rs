@@ -72,13 +72,38 @@ async fn main() -> Result<()> {
 
     // Spawn System Metrics Collector
     tokio::spawn(async move {
-        let collector = metrics_process::Collector::default();
-        collector.describe();
+        use sysinfo::{Pid, System};
+        let mut sys = System::new_all();
+        let pid = Pid::from_u32(std::process::id());
+
+        // Initial refresh
+        sys.refresh_process(pid);
+
         loop {
-            collector.collect();
-            info!("System metrics collected");
-            metrics::counter!("process_collector_heartbeat").increment(1);
-            tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+            sys.refresh_process(pid);
+
+            if let Some(process) = sys.process(pid) {
+                let cpu = process.cpu_usage();
+                let mem = process.memory();
+                let virt = process.virtual_memory();
+
+                metrics::gauge!("process_cpu_usage_ratio").set(cpu as f64);
+                metrics::gauge!("process_resident_memory_bytes").set(mem as f64);
+                metrics::gauge!("process_virtual_memory_bytes").set(virt as f64);
+                // Thread count (if available on OS)
+                // metrics::gauge!("process_threads_total").set(...) - Not reliable in cross-platform sysinfo 0.30 without specialized handling.
+                // Keeping it simple as requested.
+
+                // Add heartbeat
+                metrics::counter!("process_collector_heartbeat").increment(1);
+                info!(
+                    "System metrics collected: CPU: {:.2}%, Mem: {} bytes",
+                    cpu, mem
+                );
+            } else {
+                error!("Failed to find own process ID for metrics collection");
+            }
         }
     });
 
