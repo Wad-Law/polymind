@@ -36,3 +36,6 @@ rust_decimal = { version = "1.36", features = ["serde"] }
 sqlx = { version = "0.7", features = ["postgres", "runtime-tokio-rustls", "macros", "chrono", "rust_decimal"] }
 governor = "0.6"
 async-openai = { version = "0.32.2", features = ["chat-completion"] }
+axum = "0.7.5"
+metrics = "0.23.0"
+metrics-exporter-prometheus = "0.15.1"

@@ -25,15 +25,15 @@ use strategy::actor::StrategyActor;
 use tokio_util::sync::CancellationToken;
 use tracing::{Instrument, error, info, info_span};
 
+use marketdata::actor::MarketPricingActor;
 use marketdata::client::MarketDataClient;
 use marketdata::polymarket::PolyMarketDataClient;
 use marketdata::simulator::SimMarketDataClient;
-use marketdata::actor::MarketPricingActor;
 
-use execution::client::ExecutionClient;
-use execution::simulator::SimExecutionClient;
 use execution::actor::ExecutionActor;
+use execution::client::ExecutionClient;
 use execution::polymarket::PolyExecutionClient;
+use execution::simulator::SimExecutionClient;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
 
@@ -43,6 +43,26 @@ use persistence::database::Database;
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
     dotenv::dotenv().ok();
+
+    // Initialize Prometheus Exporter
+    let builder = metrics_exporter_prometheus::PrometheusBuilder::new();
+    let handle = builder
+        .install_recorder()
+        .expect("failed to install Prometheus recorder");
+
+    // Spawn Metrics Server
+    tokio::spawn(async move {
+        let app = axum::Router::new().route(
+            "/metrics",
+            axum::routing::get(move || {
+                let handle = handle.clone();
+                async move { handle.render() }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("0.0.0.0:9000").await.unwrap();
+        info!("Metrics endpoint listening on 0.0.0.0:9000/metrics");
+        axum::serve(listener, app).await.unwrap();
+    });
 
     let cfg = AppCfg::load("config.yml")?;
 
@@ -78,7 +98,7 @@ async fn main() -> Result<()> {
         bus.clone(),
         client.clone(),
         cfg.polymarket.clone(),
-        shutdown.clone()
+        shutdown.clone(),
     );
     let rss = RssActor::new(
         bus.clone(),
