@@ -138,6 +138,7 @@ impl FinJuiceActor {
     }
 
     async fn fetch_data_from_api(&self) -> Result<Vec<RawNews>> {
+        let start = std::time::Instant::now();
         let url = self.get_api_url();
 
         let xml = self
@@ -150,7 +151,11 @@ impl FinJuiceActor {
             .text()
             .await?;
 
-        parse_fj_response_to_raw(&xml)
+        parse_fj_response_to_raw(&xml).map(|events| {
+            metrics::histogram!("finjuice_fetch_duration_seconds")
+                .record(start.elapsed().as_secs_f64());
+            events
+        })
     }
 }
 #[async_trait::async_trait]
@@ -171,6 +176,8 @@ impl Actor for FinJuiceActor {
                 _ = tick.tick() => {
                     match self.fetch_data_from_api().await {
                         Ok(events) => {
+                            metrics::counter!("finjuice_fetches_total", "status" => "success").increment(1);
+                            metrics::counter!("finjuice_items_fetched_total").increment(events.len() as u64);
                             for n in events {
                                 if let Err(e) = self.bus.raw_news.publish(n).await {
                                     tracing::warn!(?e, "publish raw news failed");
@@ -178,6 +185,7 @@ impl Actor for FinJuiceActor {
                             }
                         }
                          Err(e) => {
+                            metrics::counter!("finjuice_fetches_total", "status" => "error").increment(1);
                             error!("FinJuiceActor: failed to fetch news from FinJuice: {:#}", e);
                             // backoff to avoid hot loop on repeated failures
                             tokio::time::sleep(Duration::from_secs(5)).await;

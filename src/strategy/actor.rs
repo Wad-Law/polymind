@@ -104,7 +104,9 @@ impl StrategyActor {
     /// 7) llm scoring
     /// 8) Kelly sizing + risk caps
     /// 9) Build orders
+    #[tracing::instrument(skip(self, raw_news), fields(title = %raw_news.title))]
     async fn handle_news_event(&mut self, raw_news: &RawNews) -> Vec<Order> {
+        let start = std::time::Instant::now();
         let order = Vec::new();
 
         // 1. Check for Halt
@@ -113,11 +115,13 @@ impl StrategyActor {
             return order;
         }
 
+        metrics::counter!("strategy_news_processed_total").increment(1);
+
         // 2. Cheap exact dedup to eliminate trivial duplicates
         if self.detector.is_duplicate(raw_news) {
+            // Count exact duplicates
+            metrics::counter!("strategy_duplicates_total", "type" => "exact").increment(1);
             return order; // Return empty if dup
-        } else {
-            info!("New event — continue pipeline.");
         }
 
         // Persist Event (fire and forget / log error)
@@ -129,6 +133,8 @@ impl StrategyActor {
             }
         };
 
+        info!("New event {:?} — continue pipeline.", event_db_id);
+
         // 2. Tokenize
         let tokenized_news = TokenizedNews::from_raw(raw_news.clone(), &self.tokenization_config);
 
@@ -136,6 +142,7 @@ impl StrategyActor {
         let h = self.sim_hash_cache.sim_hash(&tokenized_news.tokens);
         if self.sim_hash_cache.is_near_duplicate(h) {
             info!("Near-duplicate news skipped (SimHash).");
+            metrics::counter!("strategy_duplicates_total", "type" => "simhash").increment(1);
             return order;
         }
         self.sim_hash_cache.insert(h);
@@ -147,6 +154,8 @@ impl StrategyActor {
         // 5. Candidate generation with Hybrid Search (BM25 + Semantic)
         let raw_candidates =
             self.retrieve_candidates(tokenized_news.tokens.as_slice(), &raw_news.title);
+
+        metrics::counter!("strategy_candidates_found_total").increment(raw_candidates.len() as u64);
 
         // Log retrievals for debugging
         if let Some(eid) = event_db_id {
@@ -168,9 +177,13 @@ impl StrategyActor {
         // 6. Hard filters
         let entities = &feat.entities;
         let time_window = &feat.time_window;
+        let initial_count = raw_candidates.len();
         let filtered_candidates = self
             .hard_filterer
             .apply(raw_candidates, entities, time_window);
+
+        let filtered_count = initial_count - filtered_candidates.len();
+        metrics::counter!("strategy_candidates_filtered_total").increment(filtered_count as u64);
 
         // Take top N candidates for ensure_market_data optimization
         let top_candidates_for_data = filtered_candidates
@@ -200,6 +213,7 @@ impl StrategyActor {
         self.ensure_market_data(&top_candidates_for_data).await;
 
         // 7. Analyst (LLM Scoring)
+        let analyst_start = std::time::Instant::now();
         // Pass the candidates to analyst. Analyst will also limit to top_candidates internally,
         // but since we already filtered for data fetching efficiency, we pass what we have.
         // Analyst expects Vec<RawCandidate>.
@@ -212,9 +226,12 @@ impl StrategyActor {
                 event_db_id,
             )
             .await;
+        metrics::histogram!("strategy_analyst_duration_seconds")
+            .record(analyst_start.elapsed().as_secs_f64());
 
         // 8. Kelly Sizing
         let sized_decisions = self.kelly_sizer.size_positions(edged_candidates);
+        metrics::counter!("strategy_decisions_sized_total").increment(sized_decisions.len() as u64);
 
         // Persist Decisions
         for decision in &sized_decisions {
@@ -224,8 +241,14 @@ impl StrategyActor {
         }
 
         // 9. Build Orders
-        self.build_orders_from_sized_decisions(&sized_decisions)
-            .await
+        let orders = self
+            .build_orders_from_sized_decisions(&sized_decisions)
+            .await;
+
+        metrics::counter!("strategy_orders_generated_total").increment(orders.len() as u64);
+        metrics::histogram!("strategy_processing_duration_seconds")
+            .record(start.elapsed().as_secs_f64());
+        orders
     }
 
     fn retrieve_candidates(&mut self, tokens: &[String], raw_text: &str) -> Vec<RawCandidate> {
@@ -598,13 +621,17 @@ impl Actor for StrategyActor {
                 res = status_rx.recv() => {
                     match res {
                         Ok(status) => {
+                            metrics::counter!("strategy_bus_messages_total", "channel" => "status").increment(1);
                             info!("StrategyActor received system status update: {:?}", status);
                             self.status = (*status).clone();
                             if let crate::core::types::SystemStatus::Halted(reason) = &self.status {
                                 warn!("StrategyActor HALTED: {}", reason);
                             }
                         }
-                        Err(e) => error!("System status stream error: {:#}", e),
+                        Err(e) => {
+                             metrics::counter!("strategy_bus_lag_errors_total", "channel" => "status").increment(1);
+                             error!("System status stream error: {:#}", e)
+                        },
                     }
                 }
 
@@ -612,9 +639,13 @@ impl Actor for StrategyActor {
                 res = snapshot_rx.recv() => {
                     match res {
                         Ok(snap) => {
+                            metrics::counter!("strategy_bus_messages_total", "channel" => "snapshot").increment(1);
                             self.reconcile_positions(&snap);
                         }
-                        Err(e) => error!("Position snapshot stream error: {:#}", e),
+                        Err(e) => {
+                             metrics::counter!("strategy_bus_lag_errors_total", "channel" => "snapshot").increment(1);
+                             error!("Position snapshot stream error: {:#}", e)
+                        },
                     }
                 }
 
@@ -622,12 +653,14 @@ impl Actor for StrategyActor {
                 res = md_rx.recv() => {
                     match res {
                         Ok(snap) => {
+                            metrics::counter!("strategy_bus_messages_total", "channel" => "market_data").increment(1);
                             if let Some(order) = self.decide_from_tick(&snap) {
                                 // Publish order to orders topic
                                 self.bus.orders.publish(order).await?;
                             }
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            metrics::counter!("strategy_bus_lag_errors_total", "channel" => "market_data").increment(1);
                             warn!(lagged = n, "StrategyActor lagged on market_data");
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => {
@@ -641,11 +674,13 @@ impl Actor for StrategyActor {
                 res = news_rx.recv() => {
                     match res {
                         Ok(news) => {
+                            metrics::counter!("strategy_bus_messages_total", "channel" => "news").increment(1);
                             if let Some(order) = self.decide_from_news(&news).await {
                                 self.bus.orders.publish(order).await?;
                             }
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            metrics::counter!("strategy_bus_lag_errors_total", "channel" => "news").increment(1);
                             warn!(lagged = n, "StrategyActor lagged on raw_news");
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => {
@@ -659,11 +694,13 @@ impl Actor for StrategyActor {
                 res = executions_rx.recv() => {
                     match res {
                         Ok(executions) => {
+                            metrics::counter!("strategy_bus_messages_total", "channel" => "executions").increment(1);
                             if let Some(order) = self.decide_from_executions(&executions).await {
                                 self.bus.orders.publish(order).await?;
                             }
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            metrics::counter!("strategy_bus_lag_errors_total", "channel" => "executions").increment(1);
                             warn!(lagged = n, "StrategyActor lagged on executions");
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => {
@@ -677,11 +714,13 @@ impl Actor for StrategyActor {
                 res = poly_rx.recv() => {
                     match res {
                         Ok(event) => {
+                            metrics::counter!("strategy_bus_messages_total", "channel" => "polymarket_events").increment(1);
                             if let Some(order) = self.decide_from_poly_event(&event).await {
                                 self.bus.orders.publish(order).await?;
                             }
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                             metrics::counter!("strategy_bus_lag_errors_total", "channel" => "polymarket_events").increment(1);
                             warn!(lagged = n, "StrategyActor lagged on polymarket_events");
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => {
@@ -695,6 +734,7 @@ impl Actor for StrategyActor {
                 res = balance_rx.recv() => {
                     match res {
                         Ok(update) => {
+                            metrics::counter!("strategy_bus_messages_total", "channel" => "balance").increment(1);
                             info!("StrategyActor received balance update: {} USDC", update.cash);
                             self.portfolio.cash = update.cash;
                             self.bankroll = update.cash; // Update detailed bankroll too? Or keep separate?
@@ -702,6 +742,7 @@ impl Actor for StrategyActor {
                             // Assuming self.bankroll is what we use for sizing.
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            metrics::counter!("strategy_bus_lag_errors_total", "channel" => "balance").increment(1);
                             warn!(lagged = n, "StrategyActor lagged on balance updates");
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => {

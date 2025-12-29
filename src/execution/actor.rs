@@ -66,6 +66,7 @@ impl Actor for ExecutionActor {
                 _ = interval.tick() => {
                     match self.client.get_positions().await {
                         Ok(positions) => {
+                            metrics::counter!("execution_position_reconciliations_total").increment(1);
                             info!("Fetched {} positions for reconciliation", positions.len());
                             let snapshot = crate::core::types::PositionSnapshot {
                                 positions,
@@ -84,12 +85,14 @@ impl Actor for ExecutionActor {
                 res = rx.recv() => {
                     match res {
                         Ok(req) => {
+                            metrics::counter!("execution_orders_received_total").increment(1);
                             let order = req.as_ref();
                             info!("ExecutionActor received order: {:?}", order);
 
                             // Real execution via PolyExecutionClient
                             match self.client.create_order(order).await {
                                 Ok(fill) => {
+                                    metrics::counter!("execution_orders_filled_total").increment(1);
                                     info!("ExecutionActor executed fill: {:?}", fill);
                                     if let Err(_e) = self.bus.executions.publish(fill).await {
                                         error!("Failed to execute order: {:?}", _e);

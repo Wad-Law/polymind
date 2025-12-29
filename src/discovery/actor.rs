@@ -32,6 +32,7 @@ impl MarketDiscoveryActor {
     }
 
     async fn fetch_events_page(&self, offset: u32) -> Result<Vec<PolyMarketEvent>> {
+        let start = std::time::Instant::now();
         let url = self.poly_cfg.gamma_events_url.clone();
         let res = self
             .client
@@ -49,6 +50,7 @@ impl MarketDiscoveryActor {
             .context("requesting polymarket events")?;
 
         if !res.status().is_success() {
+            metrics::counter!("discovery_fetch_events_total", "status" => "error").increment(1);
             let status = res.status();
             let body = res.text().await.unwrap_or_default();
             anyhow::bail!(
@@ -64,6 +66,10 @@ impl MarketDiscoveryActor {
             .json::<Vec<PolyMarketEvent>>()
             .await
             .context("parsing polymarket events response")?;
+
+        metrics::counter!("discovery_fetch_events_total", "status" => "success").increment(1);
+        metrics::histogram!("discovery_fetch_duration_seconds")
+            .record(start.elapsed().as_secs_f64());
         Ok(events)
     }
 
@@ -143,7 +149,10 @@ impl Actor for MarketDiscoveryActor {
                             let publish_futs = poly_events.into_iter().map(
                                 move |ev| {
                                     let bus = bus.clone();
-                                    async move { bus.polymarket_events.publish(ev).await }
+                                    async move {
+                                        metrics::counter!("discovery_events_published_total").increment(1);
+                                        bus.polymarket_events.publish(ev).await
+                                    }
                                 });
 
                             // e.g. at most 32 concurrent publishes - BOUNDED concurrency to avoid blasting the bus

@@ -26,8 +26,6 @@ impl MarketPricingActor {
             shutdown,
         }
     }
-
-    // fetch_market_data logic removed, delegating to client
 }
 
 #[async_trait]
@@ -47,13 +45,17 @@ impl Actor for MarketPricingActor {
                 res = rx.recv() => {
                     match res {
                         Ok(req) => {
+                            let start = std::time::Instant::now();
                             match self.client.fetch_market_data(&req.market_id).await {
                                 Ok(snap) => {
                                     if let Err(e) = self.bus.market_data.publish(snap).await {
                                         error!("Failed to publish market data: {:#}", e);
                                     }
+                                    metrics::counter!("marketdata_requests_total", "status" => "success").increment(1);
+                                    metrics::histogram!("marketdata_fetch_duration_seconds").record(start.elapsed().as_secs_f64());
                                 }
                                 Err(e) => {
+                                    metrics::counter!("marketdata_requests_total", "status" => "error").increment(1);
                                     warn!("Failed to fetch market data for {}: {:#}", req.market_id, e);
                                 }
                             }

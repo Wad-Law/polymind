@@ -199,6 +199,7 @@ impl Database {
         event_id: Option<i64>,
         decision: &crate::strategy::types::SizedDecision,
     ) -> Result<()> {
+        let start = std::time::Instant::now();
         let side = match &decision.side {
             crate::strategy::types::TradeSide::Buy(outcome) => outcome.as_str(),
         };
@@ -211,7 +212,7 @@ impl Database {
         let size_frac = decision.size_fraction.to_string();
         let mkt_id = &decision.candidate.candidate.market_id;
 
-        sqlx::query(
+        let res = sqlx::query(
             r#"
             INSERT INTO decisions (event_id, market_id, side, score, probability, market_price, edge, kelly_fraction, size_fraction)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -227,12 +228,24 @@ impl Database {
         .bind(kelly)
         .bind(size_frac)
         .execute(&self.pool)
-        .await?;
+        .await;
+
+        match res {
+            Ok(_) => {
+                metrics::counter!("database_queries_total", "table" => "decisions", "op" => "insert", "status" => "success").increment(1);
+            }
+            Err(_) => {
+                metrics::counter!("database_queries_total", "table" => "decisions", "op" => "insert", "status" => "error").increment(1);
+            }
+        }
+        res?;
+        metrics::histogram!("database_query_duration_seconds", "table" => "decisions", "op" => "insert").record(start.elapsed().as_secs_f64());
         Ok(())
     }
 
     pub async fn save_retrieval_log(&self, event_id: i64, market_id: &str) -> Result<()> {
-        sqlx::query(
+        let start = std::time::Instant::now();
+        let res = sqlx::query(
             r#"
             INSERT INTO retrieval_logs (event_id, market_id)
             VALUES ($1, $2)
@@ -241,11 +254,23 @@ impl Database {
         .bind(event_id)
         .bind(market_id)
         .execute(&self.pool)
-        .await?;
+        .await;
+
+        match res {
+            Ok(_) => {
+                metrics::counter!("database_queries_total", "table" => "retrieval_logs", "op" => "insert", "status" => "success").increment(1);
+            }
+            Err(_) => {
+                metrics::counter!("database_queries_total", "table" => "retrieval_logs", "op" => "insert", "status" => "error").increment(1);
+            }
+        }
+        res?;
+        metrics::histogram!("database_query_duration_seconds", "table" => "retrieval_logs", "op" => "insert").record(start.elapsed().as_secs_f64());
         Ok(())
     }
 
     pub async fn save_event(&self, news: &RawNews) -> Result<i64> {
+        let start = std::time::Instant::now();
         // RETURNING id in Postgres
         let rec = sqlx::query(
             r#"
@@ -261,16 +286,24 @@ impl Database {
         .bind(&news.feed)
         .bind(news.published)
         .fetch_one(&self.pool)
-        .await?;
+        .await;
 
-        Ok(rec.get("id"))
+        match &rec {
+             Ok(_) => metrics::counter!("database_queries_total", "table" => "events", "op" => "insert", "status" => "success").increment(1),
+             Err(_) => metrics::counter!("database_queries_total", "table" => "events", "op" => "insert", "status" => "error").increment(1),
+        }
+
+        metrics::histogram!("database_query_duration_seconds", "table" => "events", "op" => "insert").record(start.elapsed().as_secs_f64());
+
+        Ok(rec?.get("id"))
     }
 
     pub async fn save_market(&self, market: &crate::core::types::PolyMarketMarket) -> Result<()> {
+        let start = std::time::Instant::now();
         let tokens_vec = market.get_tokens();
         let tokens_json = serde_json::to_value(&tokens_vec).unwrap_or(serde_json::Value::Null);
 
-        sqlx::query(
+        let res = sqlx::query(
             r#"
             INSERT INTO markets (id, question, description, start_date, end_date, active, closed, archived, tokens)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -292,7 +325,18 @@ impl Database {
         .bind(market.archived)
         .bind(tokens_json)
         .execute(&self.pool)
-        .await?;
+        .await;
+
+        match res {
+            Ok(_) => {
+                metrics::counter!("database_queries_total", "table" => "markets", "op" => "upsert", "status" => "success").increment(1);
+            }
+            Err(_) => {
+                metrics::counter!("database_queries_total", "table" => "markets", "op" => "upsert", "status" => "error").increment(1);
+            }
+        }
+        res?;
+        metrics::histogram!("database_query_duration_seconds", "table" => "markets", "op" => "upsert").record(start.elapsed().as_secs_f64());
         Ok(())
     }
 
@@ -304,8 +348,9 @@ impl Database {
         prompt: &str,
         model: &str,
     ) -> Result<()> {
+        let start = std::time::Instant::now();
         let json = serde_json::to_string(signal)?;
-        sqlx::query(
+        let res = sqlx::query(
             r#"
             INSERT INTO signals (event_id, market_id, sentiment, confidence, raw_json, prompt, model)
             VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -319,11 +364,23 @@ impl Database {
         .bind(prompt)
         .bind(model)
         .execute(&self.pool)
-        .await?;
+        .await;
+
+        match res {
+            Ok(_) => {
+                metrics::counter!("database_queries_total", "table" => "signals", "op" => "insert", "status" => "success").increment(1);
+            }
+            Err(_) => {
+                metrics::counter!("database_queries_total", "table" => "signals", "op" => "insert", "status" => "error").increment(1);
+            }
+        }
+        res?;
+        metrics::histogram!("database_query_duration_seconds", "table" => "signals", "op" => "insert").record(start.elapsed().as_secs_f64());
         Ok(())
     }
 
     pub async fn save_order(&self, order: &Order) -> Result<()> {
+        let start = std::time::Instant::now();
         let side = match order.side {
             Side::Buy => "Buy",
             Side::Sell => "Sell",
@@ -332,7 +389,7 @@ impl Database {
         let price_str = order.price.to_string();
         let size_str = order.size.to_string();
 
-        sqlx::query(
+        let res = sqlx::query(
             r#"
             INSERT INTO orders (client_order_id, market_id, token_id, side, price, size)
             VALUES ($1, $2, $3, $4, $5, $6)
@@ -345,11 +402,23 @@ impl Database {
         .bind(price_str)
         .bind(size_str)
         .execute(&self.pool)
-        .await?;
+        .await;
+
+        match res {
+            Ok(_) => {
+                metrics::counter!("database_queries_total", "table" => "orders", "op" => "insert", "status" => "success").increment(1);
+            }
+            Err(_) => {
+                metrics::counter!("database_queries_total", "table" => "orders", "op" => "insert", "status" => "error").increment(1);
+            }
+        }
+        res?;
+        metrics::histogram!("database_query_duration_seconds", "table" => "orders", "op" => "insert").record(start.elapsed().as_secs_f64());
         Ok(())
     }
 
     pub async fn save_execution(&self, exec: &Execution) -> Result<()> {
+        let start = std::time::Instant::now();
         let side = match exec.side {
             Side::Buy => "Buy",
             Side::Sell => "Sell",
@@ -358,7 +427,7 @@ impl Database {
         let size_str = exec.filled.to_string(); // mapped from filled
         let fee_str = exec.fee.to_string();
 
-        sqlx::query(
+        let res = sqlx::query(
             r#"
             INSERT INTO executions (exchange_order_id, client_order_id, market_id, token_id, side, price, size, fee)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -373,11 +442,23 @@ impl Database {
         .bind(size_str)
         .bind(fee_str)
         .execute(&self.pool)
-        .await?;
+        .await;
+
+        match res {
+            Ok(_) => {
+                metrics::counter!("database_queries_total", "table" => "executions", "op" => "insert", "status" => "success").increment(1);
+            }
+            Err(_) => {
+                metrics::counter!("database_queries_total", "table" => "executions", "op" => "insert", "status" => "error").increment(1);
+            }
+        }
+        res?;
+        metrics::histogram!("database_query_duration_seconds", "table" => "executions", "op" => "insert").record(start.elapsed().as_secs_f64());
         Ok(())
     }
 
     pub async fn upsert_position(&self, pos: &Position) -> Result<()> {
+        let start = std::time::Instant::now();
         let side = match pos.side {
             Side::Buy => "Buy",
             Side::Sell => "Sell",
@@ -387,7 +468,7 @@ impl Database {
         let curr = pos.current_price.to_string();
         let pnl = pos.unrealized_pnl.to_string();
 
-        sqlx::query(
+        let res = sqlx::query(
             r#"
             INSERT INTO positions (market_id, token_id, side, quantity, avg_entry_price, current_price, unrealized_pnl)
             VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -408,11 +489,23 @@ impl Database {
         .bind(curr)
         .bind(pnl)
         .execute(&self.pool)
-        .await?;
+        .await;
+
+        match res {
+            Ok(_) => {
+                metrics::counter!("database_queries_total", "table" => "positions", "op" => "upsert", "status" => "success").increment(1);
+            }
+            Err(_) => {
+                metrics::counter!("database_queries_total", "table" => "positions", "op" => "upsert", "status" => "error").increment(1);
+            }
+        }
+        res?;
+        metrics::histogram!("database_query_duration_seconds", "table" => "positions", "op" => "upsert").record(start.elapsed().as_secs_f64());
         Ok(())
     }
 
     pub async fn load_positions(&self) -> Result<Vec<Position>> {
+        let start = std::time::Instant::now();
         let rows = sqlx::query(
             r#"
             SELECT market_id, token_id, side, quantity, avg_entry_price, current_price, unrealized_pnl, last_updated_ts
@@ -420,7 +513,18 @@ impl Database {
             "#,
         )
         .fetch_all(&self.pool)
-        .await?;
+        .await;
+
+        match &rows {
+            Ok(_) => {
+                metrics::counter!("database_queries_total", "table" => "positions", "op" => "select", "status" => "success").increment(1);
+            }
+            Err(_) => {
+                metrics::counter!("database_queries_total", "table" => "positions", "op" => "select", "status" => "error").increment(1);
+            }
+        }
+        let rows = rows?;
+        metrics::histogram!("database_query_duration_seconds", "table" => "positions", "op" => "select").record(start.elapsed().as_secs_f64());
 
         let mut positions = Vec::new();
         for row in rows {
@@ -458,6 +562,7 @@ impl Database {
     }
 
     pub async fn load_recent_events(&self, limit: i64) -> Result<Vec<(String, String)>> {
+        let start = std::time::Instant::now();
         let rows = sqlx::query(
             r#"
             SELECT title, description
@@ -468,7 +573,18 @@ impl Database {
         )
         .bind(limit)
         .fetch_all(&self.pool)
-        .await?;
+        .await;
+
+        match &rows {
+            Ok(_) => {
+                metrics::counter!("database_queries_total", "table" => "events", "op" => "select", "status" => "success").increment(1);
+            }
+            Err(_) => {
+                metrics::counter!("database_queries_total", "table" => "events", "op" => "select", "status" => "error").increment(1);
+            }
+        }
+        let rows = rows?;
+        metrics::histogram!("database_query_duration_seconds", "table" => "events", "op" => "select").record(start.elapsed().as_secs_f64());
 
         let mut events = Vec::new();
         for row in rows {

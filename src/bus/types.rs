@@ -7,7 +7,6 @@ use async_trait::async_trait;
 use std::fmt::Debug;
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use tracing::info;
 
 // ---------- Topic trait (broadcast semantics) ----------
 #[async_trait::async_trait]

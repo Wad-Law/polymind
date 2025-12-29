@@ -3,6 +3,7 @@ use crate::core::types::{Actor, SystemStatus};
 use anyhow::Result;
 use async_trait::async_trait;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::*;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
@@ -37,6 +38,7 @@ impl RiskActor {
         }
     }
 
+    #[tracing::instrument(skip(self))]
     async fn check_risk(&mut self) -> Result<()> {
         if let SystemStatus::Halted(_) = self.status {
             return Ok(()); // Already halted
@@ -52,9 +54,11 @@ impl RiskActor {
                         drawdown * Decimal::from(100),
                         self.max_drawdown_pct * Decimal::from(100)
                     );
+                    metrics::gauge!("risk_drawdown_pct").set(drawdown.to_f64().unwrap_or(0.0));
                     self.trigger_halt(&reason).await?;
                     return Ok(());
                 }
+                metrics::gauge!("risk_drawdown_pct").set(drawdown.to_f64().unwrap_or(0.0));
             }
         }
 
@@ -68,16 +72,21 @@ impl RiskActor {
                         loss * Decimal::from(100),
                         self.max_daily_loss_pct * Decimal::from(100)
                     );
+                    metrics::gauge!("risk_daily_loss_pct").set(loss.to_f64().unwrap_or(0.0));
                     self.trigger_halt(&reason).await?;
                     return Ok(());
                 }
+                metrics::gauge!("risk_daily_loss_pct").set(loss.to_f64().unwrap_or(0.0));
             }
         }
+
+        metrics::counter!("risk_checks_total", "status" => "ok").increment(1);
 
         Ok(())
     }
 
     async fn trigger_halt(&mut self, reason: &str) -> Result<()> {
+        metrics::counter!("risk_checks_total", "status" => "halted").increment(1);
         warn!("RISK HALT TRIGGERED: {}", reason);
         self.status = SystemStatus::Halted(reason.to_string());
         self.bus.system_status.publish(self.status.clone()).await?;

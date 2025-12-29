@@ -70,6 +70,16 @@ async fn main() -> Result<()> {
 
     metrics::counter!("polymind_startups_total").increment(1);
 
+    // Spawn System Metrics Collector
+    tokio::spawn(async move {
+        let collector = metrics_process::Collector::default();
+        collector.describe();
+        loop {
+            collector.collect();
+            tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+        }
+    });
+
     let cfg = AppCfg::load("config.yml")?;
 
     // Root span for the supervisor/main thread
