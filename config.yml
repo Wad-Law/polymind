@@ -48,8 +48,8 @@ financialJuice:
 strategy:
   simExecution: true
   simMarketData: true
-  simBankroll: 1000.0
   topCandidates: 5
+  maxPositionDrawdownPct: 0.2
 
 llm:
   model: "gpt-5-nano"

@@ -101,6 +101,7 @@ impl Actor for RiskActor {
 
         // Subscribe to relevant topics
         let mut balance_rx = self.bus.balance.subscribe();
+        let mut portfolio_rx = self.bus.portfolio_update.subscribe();
         let mut executions_rx = self.bus.executions.subscribe();
 
         loop {
@@ -110,26 +111,42 @@ impl Actor for RiskActor {
                     break;
                 }
 
-                // Monitor Balance
-                res = balance_rx.recv() => {
-                    match res {
+                // Monitor Portfolio (The primary source for Risk)
+                res = portfolio_rx.recv() => {
+                     match res {
                         Ok(update) => {
-                            self.current_balance = update.cash;
+                            self.current_balance = update.total_equity;
 
-                            // Set initial balance if first time
+                             // Set initial balance if first time
                             if self.initial_balance.is_none() {
-                                self.initial_balance = Some(update.cash);
-                                info!("RiskActor: Initial Balance set to {}", update.cash);
+                                self.initial_balance = Some(update.total_equity);
+                                info!("RiskActor: Initial Balance (Equity) set to {}", update.total_equity);
                             }
 
                             // Update peak balance
-                            if self.peak_balance.map_or(true, |peak| update.cash > peak) {
-                                self.peak_balance = Some(update.cash);
+                            if self.peak_balance.map_or(true, |peak| update.total_equity > peak) {
+                                self.peak_balance = Some(update.total_equity);
                             }
 
                             if let Err(e) = self.check_risk().await {
                                 error!("RiskActor: Risk check failed: {}", e);
                             }
+                        }
+                        Err(e) => error!("RiskActor: Portfolio stream error: {:#}", e),
+                     }
+                }
+
+                // Monitor Balance (Cash only - purely for info or initial setup, NO risk check to avoid false drawdown on entry)
+                res = balance_rx.recv() => {
+                    match res {
+                        Ok(update) => {
+                            // If we haven't seen any portfolio update yet, we might treat cash as equity
+                            if self.initial_balance.is_none() {
+                                self.initial_balance = Some(update.cash);
+                                self.current_balance = update.cash;
+                                info!("RiskActor: Initial Balance (Cash) set to {}", update.cash);
+                            }
+                            // Do NOT check risk here. Cash drops when we enter positions.
                         }
                         Err(e) => error!("RiskActor: Balance stream error: {:#}", e),
                     }

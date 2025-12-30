@@ -183,7 +183,7 @@ async fn main() -> Result<()> {
 
     let exec_client: std::sync::Arc<dyn ExecutionClient> = if cfg.strategy.sim_execution {
         info!("Running in SIMULATED EXECUTION mode");
-        let initial_cash = Decimal::from_f64(cfg.strategy.sim_bankroll).unwrap_or(Decimal::ZERO);
+        let initial_cash = Decimal::from_f64(1000.0).unwrap_or(Decimal::ZERO);
         std::sync::Arc::new(SimExecutionClient::new(initial_cash))
     } else {
         info!("Running in LIVE EXECUTION mode");

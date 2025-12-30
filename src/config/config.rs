@@ -197,22 +197,25 @@ impl Default for FinJuiceCfg {
 
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct StrategyCfg {
-    #[serde(default = "default_bankroll", rename = "simBankroll")]
-    pub sim_bankroll: f64,
     #[serde(default, rename = "simExecution")]
     pub sim_execution: bool,
     #[serde(default, rename = "simMarketData")]
     pub sim_market_data: bool,
     #[serde(default = "default_top_candidates", rename = "topCandidates")]
     pub top_candidates: usize,
+    #[serde(
+        default = "default_max_pos_drawdown",
+        rename = "maxPositionDrawdownPct"
+    )]
+    pub max_position_drawdown_pct: f64,
 }
 
 fn default_top_candidates() -> usize {
     5
 }
 
-fn default_bankroll() -> f64 {
-    1000.0
+fn default_max_pos_drawdown() -> f64 {
+    0.20 // 20%
 }
 
 impl AppCfg {

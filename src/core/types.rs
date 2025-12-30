@@ -210,6 +210,13 @@ pub struct PositionSnapshot {
     pub timestamp: i64,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PortfolioUpdate {
+    pub cash: Decimal,
+    pub total_equity: Decimal,
+    pub timestamp: i64,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Portfolio {
     pub positions: std::collections::HashMap<String, Position>, // key: token_id usually, or market_id+token_id

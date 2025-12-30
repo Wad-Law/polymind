@@ -55,6 +55,7 @@ pub struct Bus {
     pub balance: Arc<dyn Topic<BalanceUpdate>>,
     pub system_status: Arc<dyn Topic<SystemStatus>>,
     pub positions_snapshot: Arc<dyn Topic<crate::core::types::PositionSnapshot>>,
+    pub portfolio_update: Arc<dyn Topic<crate::core::types::PortfolioUpdate>>,
 }
 
 impl Bus {
@@ -72,6 +73,9 @@ impl Bus {
             system_status: Arc::new(BroadcastTopic::<SystemStatus>::with_capacity(cap)),
             positions_snapshot: Arc::new(
                 BroadcastTopic::<crate::core::types::PositionSnapshot>::with_capacity(cap),
+            ),
+            portfolio_update: Arc::new(
+                BroadcastTopic::<crate::core::types::PortfolioUpdate>::with_capacity(cap),
             ),
         }
     }

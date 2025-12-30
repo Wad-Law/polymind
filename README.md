@@ -12,6 +12,37 @@ Built on a modular **Actor System** using `tokio` broadcast channels (The **Bus*
 - **Market Data**: Retrieves live prices and order books from Gamma/Polymarket APIs.
 - **Execution**: Management of orders via EIP-712 signing and PolyMarket CTF Exchange interaction.
 
+### System Architecture
+
+```mermaid
+graph TD
+    %% Sources
+    RSS[RSS Actor] -->|RawNews| Bus
+    FinJuice[FinJuice Actor] -->|RawNews| Bus
+    Gamma[Gamma Poller] -->|PolyMarketEvent| Bus
+
+    %% Bus
+    subgraph Event Bus
+        Bus((Bus Channels))
+    end
+    
+    %% Strategy Loop
+    Bus -->|RawNews / Events / MarketData| Strategy[Strategy Actor]
+    Strategy -->|MarketDataRequest| Bus
+    MarketData[MarketData Actor] -->|MarketDataSnap| Bus
+    
+    %% Execution Loop
+    Strategy -->|Order| Bus
+    Bus -->|Order| Execution[Execution Actor]
+    Execution -->|Execution / Balance / PositionSnap| Bus
+
+    %% Risk Loop
+    Strategy -->|PortfolioUpdate| Bus
+    Bus -->|PortfolioUpdate / Balance| Risk[Risk Actor]
+    Risk -->|SystemStatus Halted| Bus
+    Bus -->|SystemStatus| Strategy
+```
+
 ### 2. **Advanced NLP Pipeline**
 - **Tokenization**: Custom pipeline with stemming, stopword removal, and n-gram generation (bigrams/trigrams).
 - **SimHash**: Fast locality-sensitive hashing for detecting near-duplicate news events.
@@ -21,7 +52,11 @@ Built on a modular **Actor System** using `tokio` broadcast channels (The **Bus*
 ### 3. **Quantitative Strategy**
 - **Financial Precision**: Uses `rust_decimal` for all financial calculations (prices, sizes, bankroll) to avoid floating-point errors.
 - **Kelly Criterion**: Dynamic position sizing based on estimated edge and probability.
-- **Risk Management**: "Kill Switch" functionality via `RiskActor` which halts trading upon breaching daily loss or drawdown limits.
+- **Kelly Criterion**: Dynamic position sizing based on estimated edge and probability.
+- **Risk Management**:
+    - **Global Circuit Breaker**: Tracks **Net Liquidation Value (NLV)** and halts trading if global drawdown exceeds 10%.
+    - **Liquidation Protocol**: Upon a global halt, the `StrategyActor` immediately liquidates **ALL** active positions.
+    - **Per-Position Stop Loss**: Automatically liquidates individual positions if they breach a 20% drawdown limit.
 - **Position Reconciliation**: Periodic synchronization with the Polymarket Data API to correct internal state drift and remove "zombie" positions.
 - **Auditability**: Full database persistence of every event, market snapshot, order, and execution with explicit foreign key linking for complete traceability.
 
@@ -108,6 +143,11 @@ cargo test
 - `src/execution`: Order signing, submission, and state reconciliation actors.
 
 ## 🔮 Next Steps
+
+1.  **Backtesting Engine**: Create a simulation mode to replay historical news and validate strategy performance.
+2.  **Live Monitoring Dashboard**: A TUI or Web UI to monitor active positions, PnL, and system health in real-time.
+3.  **Low-Latency Upgrades**: Replace market data polling with WebSocket subscriptions.
+4.  **Multi-LLM Consensus**: Query multiple models and aggregate scores for higher confidence signals.
 
 1.  **Backtesting Engine**: Create a simulation mode to replay historical news and validate strategy performance.
 2.  **Live Monitoring Dashboard**: A TUI or Web UI to monitor active positions, PnL, and system health in real-time.

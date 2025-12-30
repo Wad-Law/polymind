@@ -351,14 +351,20 @@ impl PolyExecutionClient {
                         _ => Side::Buy, // Default?
                     };
 
+                    let avg_entry = item
+                        .get("avgPrice")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| Decimal::from_str(s).ok())
+                        .unwrap_or(Decimal::ZERO);
+
                     positions.push(crate::core::types::Position {
                         market_id: market_id.to_string(),
                         token_id: token_id.to_string(),
                         side,
                         quantity: size,
-                        avg_entry_price: Decimal::ZERO, // API might give avgPrice
-                        current_price: Decimal::ZERO,
-                        unrealized_pnl: Decimal::ZERO,
+                        avg_entry_price: avg_entry,
+                        current_price: Decimal::ZERO, // Live data needed
+                        unrealized_pnl: Decimal::ZERO, // Calculated by Strategy
                         last_updated_ts: chrono::Utc::now().timestamp_millis(),
                     });
                 }
@@ -383,5 +389,69 @@ impl ExecutionClient for PolyExecutionClient {
 
     async fn get_positions(&self) -> Result<Vec<crate::core::types::Position>> {
         self.fetch_positions().await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::config::PolyCfg;
+    use crate::core::types::Side;
+    use rust_decimal::prelude::FromPrimitive;
+    use tokio::time::Duration;
+
+    #[tokio::test]
+    async fn test_poly_execution_client_structure() {
+        // 1. Setup with invalid keys (to ensure we don't accidentally spend money if valid keys were somehow present)
+        let mut cfg = PolyCfg::default();
+        cfg.base_url = "https://clob.polymarket.com".to_string(); // Live URL to check connectivity
+        cfg.api_key = "test-key".to_string();
+        // A valid 32-byte private key (this is just the number 1)
+        cfg.api_secret =
+            "0000000000000000000000000000000000000000000000000000000000000001".to_string();
+        cfg.passphrase = "pass".to_string();
+
+        let client = Client::builder()
+            .timeout(Duration::from_secs(5))
+            .build()
+            .unwrap();
+
+        let poly_exec = PolyExecutionClient::new(cfg, client);
+
+        // 2. Create a Dummy Order
+        let order = CoreOrder {
+            client_order_id: "test-order-1".to_string(),
+            market_id: "0".to_string(), // Invalid market
+            token_id: Some("0".to_string()),
+            side: Side::Buy,
+            price: Decimal::from_f64(0.5).unwrap(),
+            size: Decimal::from_f64(10.0).unwrap(),
+        };
+
+        // 3. Attempt Submission
+        let res = poly_exec.create_order(&order).await;
+
+        // 4. Verify Failure Type
+        // We expect an error because the keys are invalid / balance insufficient / market invalid.
+        // BUT, the key thing is that the function ran, signed (local wallet), and tried to POST.
+        match res {
+            Ok(_) => panic!("Order should have failed with invalid keys"),
+            Err(e) => {
+                println!("Got expected error: {:?}", e);
+
+                let msg = e.to_string().to_lowercase();
+                assert!(
+                    msg.contains("polymarket api error")
+                        || msg.contains("401")
+                        || msg.contains("400")
+                        || msg.contains("403")
+                        || msg.contains("dns error")
+                        || msg.contains("connection refused")
+                        || msg.contains("failed to lookup address"),
+                    "Unexpected error message: {}",
+                    msg
+                );
+            }
+        }
     }
 }

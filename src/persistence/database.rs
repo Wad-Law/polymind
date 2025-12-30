@@ -617,24 +617,73 @@ impl Database {
         Ok(events)
     }
 
-    pub async fn load_active_markets(&self) -> Result<Vec<(String, String, String)>> {
+    pub async fn load_markets(&self) -> Result<Vec<crate::core::types::PolyMarketMarket>> {
+        let start = std::time::Instant::now();
         let rows = sqlx::query(
             r#"
-            SELECT market_id, question, description
+            SELECT market_id, question, description, active, closed, archived, start_date, end_date, tokens
             FROM markets
-            WHERE active = true AND closed = false
             "#,
         )
         .fetch_all(&self.pool)
-        .await?;
+        .await;
+
+        match &rows {
+            Ok(_) => {
+                metrics::counter!("database_queries_total", "table" => "markets", "op" => "select_all", "status" => "success").increment(1);
+            }
+            Err(_) => {
+                metrics::counter!("database_queries_total", "table" => "markets", "op" => "select_all", "status" => "error").increment(1);
+            }
+        }
+        let rows = rows?;
+        metrics::histogram!("database_query_duration_seconds", "table" => "markets", "op" => "select_all").record(start.elapsed().as_secs_f64());
 
         let mut markets = Vec::new();
         for row in rows {
             let id: String = row.get("market_id");
+            // Schema says question is NOT NULL
             let question: String = row.get("question");
             let description: Option<String> = row.get("description");
-            let description = description.unwrap_or_default();
-            markets.push((id, question, description));
+            let active: bool = row.get("active");
+            let closed: bool = row.get("closed");
+            let archived: bool = row.get("archived");
+            let start_date: Option<String> = row.get("start_date");
+            let end_date: Option<String> = row.get("end_date");
+            let tokens_val: Option<serde_json::Value> = row.get("tokens");
+
+            let mut clob_token_ids = None;
+            let mut outcomes = None;
+            let mut outcome_prices = None;
+
+            if let Some(tokens_json) = tokens_val {
+                if let Ok(tokens) =
+                    serde_json::from_value::<Vec<crate::core::types::MarketToken>>(tokens_json)
+                {
+                    let ids: Vec<String> = tokens.iter().map(|t| t.token_id.clone()).collect();
+                    let outs: Vec<String> = tokens.iter().map(|t| t.outcome.clone()).collect();
+                    let prices: Vec<String> = tokens.iter().map(|t| t.price.to_string()).collect();
+
+                    // Reconstruct JSON strings (best effort for hash consistency)
+                    clob_token_ids = Some(serde_json::to_string(&ids).unwrap_or_default());
+                    outcomes = Some(serde_json::to_string(&outs).unwrap_or_default());
+                    outcome_prices = Some(serde_json::to_string(&prices).unwrap_or_default());
+                }
+            }
+
+            markets.push(crate::core::types::PolyMarketMarket {
+                id,
+                question: Some(question),
+                description,
+                active,
+                closed,
+                archived,
+                start_date,
+                end_date,
+                clob_token_ids,
+                outcomes,
+                outcome_prices,
+            });
         }
         Ok(markets)
     }
