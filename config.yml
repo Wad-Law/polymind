@@ -46,8 +46,8 @@ financialJuice:
   refresh: "10s"
 
 strategy:
-  simExecution: true
-  simMarketData: true
+  simExecution: false
+  simMarketData: false
   topCandidates: 5
   maxPositionDrawdownPct: 0.2
 

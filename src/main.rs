@@ -50,7 +50,15 @@ async fn main() -> Result<()> {
 
     // Initialize Prometheus Exporter
     let builder = metrics_exporter_prometheus::PrometheusBuilder::new();
+    let duration_buckets = &[
+        0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
+    ];
     let handle = builder
+        .set_buckets_for_metric(
+            metrics_exporter_prometheus::Matcher::Suffix("duration_seconds".to_string()),
+            duration_buckets,
+        )
+        .unwrap()
         .install_recorder()
         .expect("failed to install Prometheus recorder");
 
