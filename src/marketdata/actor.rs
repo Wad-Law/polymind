@@ -96,12 +96,11 @@ mod tests {
             gamma_markets_url: "http://localhost/markets".to_string(),
             market_list_refresh: Duration::from_secs(1),
             page_limit: 10,
-            api_key: "".to_string(),
-            api_secret: "".to_string(),
-            passphrase: "".to_string(),
             token_decimals: 6,
             rpc_url: "http://localhost:8545".to_string(),
             data_api_url: "http://localhost/positions".to_string(),
+            private_key: "".to_string(),
+            proxy_address: None,
         }
     }
 

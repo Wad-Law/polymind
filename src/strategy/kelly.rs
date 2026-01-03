@@ -2,8 +2,8 @@ use crate::strategy::types::{EdgedCandidate, SizedDecision, TradeSide};
 use rust_decimal::Decimal;
 
 pub struct KellySizer {
-    kelly_multiplier: Decimal,
-    max_position_fraction: Decimal,
+    pub kelly_multiplier: Decimal,
+    pub max_position_fraction: Decimal,
 }
 
 impl Default for KellySizer {

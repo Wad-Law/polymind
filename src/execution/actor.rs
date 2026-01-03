@@ -34,8 +34,8 @@ impl Actor for ExecutionActor {
     async fn run(mut self) -> Result<()> {
         info!("ExecutionActor started");
 
-        // Initial balance fetch
-        match self.client.get_balance().await {
+        // Initial proxy balance fetch
+        match self.client.get_proxy_balance().await {
             Ok(bal) => {
                 info!("Initial Bankroll: {} USDC", bal);
                 let update = BalanceUpdate {
@@ -149,24 +149,43 @@ mod tests {
     use super::*;
     use crate::config::config::PolyCfg;
     use crate::core::types::Order;
-    use crate::execution::polymarket::PolyExecutionClient;
-    use reqwest::Client;
+
     use rust_decimal::Decimal;
     use rust_decimal::prelude::FromPrimitive;
     use tokio::time::Duration; // For from_f64/from_str
+
+    struct MockExecutionClient;
+    #[async_trait::async_trait]
+    impl ExecutionClient for MockExecutionClient {
+        async fn create_order(&self, order: &Order) -> Result<crate::core::types::Execution> {
+            Ok(crate::core::types::Execution {
+                client_order_id: order.client_order_id.clone(),
+                market_id: order.market_id.clone(),
+                exchange_order_id: Some("mock-id".to_string()),
+                token_id: Some("mock-token".to_string()),
+                side: order.side,
+                avg_px: order.price,
+                filled: order.size,
+                fee: Decimal::ZERO,
+                ts_ms: chrono::Utc::now().timestamp_millis(),
+            })
+        }
+        async fn get_proxy_balance(&self) -> Result<Decimal> {
+            Ok(Decimal::from(1000))
+        }
+        async fn get_positions(&self) -> Result<Vec<crate::core::types::Position>> {
+            Ok(vec![])
+        }
+    }
 
     #[tokio::test]
     async fn test_execution_actor_flow() {
         let bus = Bus::new();
         let shutdown = CancellationToken::new();
-        let client = Client::new();
-        let mut cfg = PolyCfg::default();
-        // Dummy private key for testing (random hex)
-        cfg.api_key = "test-key".to_string();
-        cfg.api_secret =
-            "0000000000000000000000000000000000000000000000000000000000000001".to_string();
-        let exec_client = PolyExecutionClient::new(cfg, client);
-        let actor = ExecutionActor::new(bus.clone(), shutdown.clone(), Arc::new(exec_client));
+        // Removed unused reqwest::Client
+
+        let mock_client = Arc::new(MockExecutionClient);
+        let actor = ExecutionActor::new(bus.clone(), shutdown.clone(), mock_client);
 
         // Spawn actor
         tokio::spawn(async move {
@@ -175,11 +194,16 @@ mod tests {
 
         // Subscribe to executions
         let mut exec_rx = bus.executions.subscribe();
+        let mut balance_rx = bus.balance.subscribe();
 
-        // Give the actor a moment to start and subscribe to orders
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        // Give the actor a moment to start and publish initial balance
+        tokio::time::sleep(Duration::from_millis(50)).await;
 
-        // Publish
+        // Verify initial balance
+        let bal_update = balance_rx.try_recv();
+        assert!(bal_update.is_ok(), "Should receive initial balance update");
+
+        // Publish Order
         let order = Order {
             client_order_id: "test-123".to_string(),
             market_id: "123456".to_string(),
@@ -191,19 +215,11 @@ mod tests {
         bus.orders.publish(order.clone()).await.unwrap();
 
         // Wait for execution
-        // Wait for execution
-        // NOTE: With dummy keys and real network calls, this WILL fail to produce an execution.
-        // We expect a timeout here, which confirms the actor attempted to execute but failed (as expected).
         let res = tokio::time::timeout(Duration::from_secs(1), exec_rx.recv()).await;
 
-        // We expect a timeout because create_order should fail with dummy keys/network
-        assert!(
-            res.is_err(),
-            "Expected timeout due to failed execution with dummy keys"
-        );
-
-        // If we wanted to verify the error log, we'd need a different logging setup,
-        // but for now we just ensure the actor didn't crash and didn't publish a fake fill.
+        assert!(res.is_ok(), "Should receive execution from mock client");
+        let execution = res.unwrap().unwrap();
+        assert_eq!(execution.client_order_id, "test-123");
 
         // Shutdown
         shutdown.cancel();

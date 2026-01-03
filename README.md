@@ -51,16 +51,29 @@ graph TD
 
 ### 3. **Quantitative Strategy**
 - **Financial Precision**: Uses `rust_decimal` for all financial calculations (prices, sizes, bankroll) to avoid floating-point errors.
+- **Hybrid Search**: Combines **BM25** (keyword matching) and **Semantic Search** (embeddings) to instantly find relevant prediction markets for breaking news.
 - **Kelly Criterion**: Dynamic position sizing based on estimated edge and probability.
-- **Kelly Criterion**: Dynamic position sizing based on estimated edge and probability.
+    - **Minimum Order Enforcement**: Automatically bumps orders to meet Polymarket's $1.00 minimum value constraint, or skips them if the risk exceeds `max_position_fraction` (Safety Cap).
 - **Risk Management**:
     - **Global Circuit Breaker**: Tracks **Net Liquidation Value (NLV)** and halts trading if global drawdown exceeds 10%.
     - **Liquidation Protocol**: Upon a global halt, the `StrategyActor` immediately liquidates **ALL** active positions.
     - **Per-Position Stop Loss**: Automatically liquidates individual positions if they breach a 20% drawdown limit.
 - **Position Reconciliation**: Periodic synchronization with the Polymarket Data API to correct internal state drift and remove "zombie" positions.
-- **Auditability**: Full database persistence of every event, market snapshot, order, and execution with explicit foreign key linking for complete traceability.
+- **Auditability**: Full database persistence of every event, market snapshot, order, and execution.
 
-### 4. **Database Schema**
+### 4. **Reliable Execution**
+- **Gnosis Safe Support**: Automatically derives and verifies Proxy Wallet balance via JSON-RPC to ensure accurate buying power even with complex wallet setups.
+- **Marketable Limit Orders**: Simulates "Market" orders using aggressively priced Limit Orders (Buy @ $0.99 / Sell @ $0.01) with `FAK` (Fill-And-Kill) time-in-force, ensuring immediate execution or cancellation without resting orders on the book.
+- **EIP-712 Signing**: Secure, typed data signing for all CLOB interactions.
+
+### 5. **Observability Stack**
+Comprehensive monitoring via a deployed **Prometheus / Grafana / ELK** stack:
+- **System Metrics**: CPU, Memory, Disk usage, and Process Heartbeats.
+- **Business Metrics**: News Ingestion Rate, Candidate Finding Rate, Order Fill Rate.
+- **Strategy Performance**: Latency histograms (Analyst, End-to-End), Kelly Sizing distribution, and Signal Confidence tracking.
+- **Logs**: Centralized structured logging in Elasticsearch/Kibana for debugging distributed actor flows.
+
+### 6. **Database Schema**
 The system uses a strictly typed PostgreSQL schema with explicit foreign keys to ensure data integrity and auditability:
 - **`events`**: Validated news items.
 - **`candidate_markets`**: Markets retrieved as potential matches for an event.
@@ -145,10 +158,6 @@ cargo test
 ## 🔮 Next Steps
 
 1.  **Backtesting Engine**: Create a simulation mode to replay historical news and validate strategy performance.
-2.  **Live Monitoring Dashboard**: A TUI or Web UI to monitor active positions, PnL, and system health in real-time.
-3.  **Low-Latency Upgrades**: Replace market data polling with WebSocket subscriptions.
-4.  **Multi-LLM Consensus**: Query multiple models and aggregate scores for higher confidence signals.
-
-1.  **Backtesting Engine**: Create a simulation mode to replay historical news and validate strategy performance.
-2.  **Live Monitoring Dashboard**: A TUI or Web UI to monitor active positions, PnL, and system health in real-time.
+2.  **Low-Latency Upgrades**: Replace market data polling with WebSocket subscriptions.
 3.  **Multi-LLM Consensus**: Query multiple models and aggregate scores for higher confidence signals.
+4.  **PersistenceActor**: throttling, decoupling, latency reduction: subscribes to topics and writes them to the database.

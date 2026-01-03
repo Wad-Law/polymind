@@ -187,10 +187,7 @@ async fn main() -> Result<()> {
         std::sync::Arc::new(SimExecutionClient::new(initial_cash))
     } else {
         info!("Running in LIVE EXECUTION mode");
-        std::sync::Arc::new(PolyExecutionClient::new(
-            cfg.polymarket.clone(),
-            client.clone(),
-        ))
+        std::sync::Arc::new(PolyExecutionClient::new(cfg.polymarket.clone()).await?)
     };
 
     let exec = ExecutionActor::new(bus.clone(), shutdown.clone(), exec_client);

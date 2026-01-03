@@ -411,7 +411,48 @@ impl StrategyActor {
                 continue;
             }
 
-            let quantity = (bankroll * decision.size_fraction) / price;
+            // Polymarket typically handles 2 decimal places for shares (0.01 increments)
+            let mut quantity = ((bankroll * decision.size_fraction) / price).round_dp(2);
+
+            // Enforce Minimum Order Value ($1.00 USDC for FAK)
+            let min_order_value = Decimal::new(1, 0); // 1.00 USDC
+            let notional_value = quantity * price;
+
+            if notional_value < min_order_value {
+                // Try to bump to Minimum Size
+                // Calculate shares needed for $1.00, rounding UP to 2 decimals to ensure >= $1.00
+                // Using ToPositiveInfinity to behave like Ceiling for positive numbers
+                let min_quantity = (min_order_value / price)
+                    .round_dp_with_strategy(2, rust_decimal::RoundingStrategy::ToPositiveInfinity);
+
+                // Risk Check: Is the min bet safe?
+                // Calculate what fraction of bankroll this min bet represents
+                let min_bet_fraction = if bankroll > Decimal::ZERO {
+                    (min_quantity * price) / bankroll
+                } else {
+                    Decimal::MAX // Infinite risk if no bankroll
+                };
+
+                if min_bet_fraction <= self.kelly_sizer.max_position_fraction {
+                    info!(
+                        "Bumping order size for {} from {:.2} to {:.2} to meet Min Order Value $1.00 (Risk: {:.2}%)",
+                        decision.candidate.candidate.market_id,
+                        quantity,
+                        min_quantity,
+                        min_bet_fraction * Decimal::from(100)
+                    );
+                    quantity = min_quantity;
+                } else {
+                    warn!(
+                        "Skipping order for {} (Notional ${:.2}): Min Order Value $1.00 requires {:.2}% of bankroll (Limit {:.2}%).",
+                        decision.candidate.candidate.market_id,
+                        notional_value,
+                        min_bet_fraction * Decimal::from(100),
+                        self.kelly_sizer.max_position_fraction * Decimal::from(100)
+                    );
+                    continue;
+                }
+            }
 
             // Generate a simple client order ID
             let client_order_id = format!(

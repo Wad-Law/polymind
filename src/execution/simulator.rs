@@ -105,7 +105,7 @@ impl ExecutionClient for SimExecutionClient {
         })
     }
 
-    async fn get_balance(&self) -> Result<Decimal> {
+    async fn get_proxy_balance(&self) -> Result<Decimal> {
         let state = self.state.lock().await;
         Ok(state.cash)
     }

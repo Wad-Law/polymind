@@ -32,7 +32,7 @@ ethers = { version = "2.0.14", features = ["abigen", "ws", "eip712", "rustls"] }
 hex = "0.4.3"
 dotenv = "0.15.0"
 fastembed = "5.5.0"
-rust_decimal = { version = "1.36", features = ["serde"] }
+rust_decimal = { version = "1.36", features = ["serde", "macros"] }
 sqlx = { version = "0.7", features = ["postgres", "runtime-tokio-rustls", "macros", "chrono", "rust_decimal"] }
 governor = "0.6"
 async-openai = { version = "0.32.2", features = ["chat-completion"] }
@@ -40,3 +40,13 @@ axum = "0.7.5"
 metrics = "0.23.0"
 metrics-exporter-prometheus = "0.15.1"
 sysinfo = "0.30"
+base64 = "0.22.1"
+hmac = "0.12.1"
+sha2 = "0.10.9"
+polymarket-client-sdk = "0.2.1"
+alloy = { version = "1.2.1", features = ["signers", "signer-local", "rpc-types-eth", "sol-types", "json"] }
+secrecy = "0.8"
+uuid = { version = "1.11.0", features = ["v4", "serde"] }
+
+[dev-dependencies]
+wiremock = "0.6"

@@ -102,18 +102,17 @@ pub struct PolyCfg {
     pub market_list_refresh: Duration,
     #[serde(rename = "pageLimit", default = "default_page_limit")]
     pub page_limit: u32,
-    #[serde(default)]
-    pub api_key: String,
-    #[serde(default)]
-    pub api_secret: String,
-    #[serde(default)]
-    pub passphrase: String,
+
     #[serde(rename = "tokenDecimals", default = "default_token_decimals")]
     pub token_decimals: u32,
     #[serde(rename = "rpcUrl")]
     pub rpc_url: String,
     #[serde(rename = "dataApiUrl")]
     pub data_api_url: String,
+    #[serde(default, rename = "privateKey")]
+    pub private_key: String,
+    #[serde(default, rename = "proxyAddress")]
+    pub proxy_address: Option<String>,
 }
 
 impl Default for PolyCfg {
@@ -124,12 +123,12 @@ impl Default for PolyCfg {
             gamma_markets_url: "https://gamma-api.polymarket.com/markets".to_string(),
             market_list_refresh: Duration::from_secs(300),
             page_limit: default_page_limit(),
-            api_key: "".to_string(),
-            api_secret: "".to_string(),
-            passphrase: "".to_string(),
+
             token_decimals: default_token_decimals(),
             rpc_url: "https://polygon-rpc.com".to_string(),
             data_api_url: "https://data-api.polymarket.com".to_string(),
+            private_key: "".to_string(),
+            proxy_address: None,
         }
     }
 }
@@ -230,20 +229,15 @@ impl AppCfg {
                 .set_override("llm.api_key", key)
                 .context("setting LLM_API_KEY")?;
         }
-        if let Ok(key) = std::env::var("POLY_API_KEY") {
+        if let Ok(key) = std::env::var("POLY_PRIVATE_KEY") {
             builder = builder
-                .set_override("polymarket.api_key", key)
-                .context("setting POLY_API_KEY")?;
+                .set_override("polymarket.private_key", key)
+                .context("setting POLY_PRIVATE_KEY")?;
         }
-        if let Ok(secret) = std::env::var("POLY_API_SECRET") {
+        if let Ok(addr) = std::env::var("POLY_PROXY_ADDRESS") {
             builder = builder
-                .set_override("polymarket.api_secret", secret)
-                .context("setting POLY_API_SECRET")?;
-        }
-        if let Ok(pass) = std::env::var("POLY_PASSPHRASE") {
-            builder = builder
-                .set_override("polymarket.passphrase", pass)
-                .context("setting POLY_PASSPHRASE")?;
+                .set_override("polymarket.proxy_address", addr)
+                .context("setting POLY_PROXY_ADDRESS")?;
         }
 
         let cfg = builder.build().context("building config")?;
