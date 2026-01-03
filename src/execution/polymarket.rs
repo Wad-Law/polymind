@@ -141,7 +141,9 @@ impl PolyExecutionClient {
         // SDK code: map.insert(POLY_SIGNATURE, signature.to_string().parse()?);
         // Signature::to_string outputs hex.
 
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .build()?;
         let url = format!("{}/auth/derive-api-key", base_url);
 
         let resp = client
