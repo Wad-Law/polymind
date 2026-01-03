@@ -231,12 +231,12 @@ impl AppCfg {
         }
         if let Ok(key) = std::env::var("POLY_PRIVATE_KEY") {
             builder = builder
-                .set_override("polymarket.private_key", key)
+                .set_override("polymarket.privateKey", key)
                 .context("setting POLY_PRIVATE_KEY")?;
         }
         if let Ok(addr) = std::env::var("POLY_PROXY_ADDRESS") {
             builder = builder
-                .set_override("polymarket.proxy_address", addr)
+                .set_override("polymarket.proxyAddress", addr)
                 .context("setting POLY_PROXY_ADDRESS")?;
         }
 
