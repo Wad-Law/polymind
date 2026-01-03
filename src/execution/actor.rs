@@ -147,7 +147,7 @@ impl Actor for ExecutionActor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::config::PolyCfg;
+
     use crate::core::types::Order;
 
     use rust_decimal::Decimal;

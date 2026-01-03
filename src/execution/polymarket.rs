@@ -410,7 +410,7 @@ mod tests {
     use crate::core::types::{Order, Side as CoreSide};
     use rust_decimal::Decimal;
     use uuid::Uuid;
-    use wiremock::matchers::{method, path};
+    use wiremock::matchers::{body_string_contains, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[tokio::test]
@@ -531,12 +531,30 @@ mod tests {
             .mount(&mock_server)
             .await;
 
+        // Mock RPC Balance Call
+        // Request: {"method":"eth_call", ...}
+        // Response: 1000.50 USDC * 10^6 = 1000500000 = 0x3BA14300
+        Mock::given(method("POST"))
+            // We can't easily match the body for eth_call specifically without complex matching,
+            // but since we separate mocks by strictness or just assume sequential calls?
+            // "method":"eth_call"
+            .and(body_string_contains("eth_call"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": "0x000000000000000000000000000000000000000000000000000000003ba26b20"
+            })))
+            .mount(&mock_server)
+            .await;
+
         // Init Config
         let mut cfg = PolyCfg::default();
         cfg.private_key =
             "0000000000000000000000000000000000000000000000000000000000000001".to_string();
         cfg.base_url = mock_server.uri(); // Point CLOB to mock
         cfg.data_api_url = mock_server.uri(); // Point Data API to mock
+        cfg.rpc_url = mock_server.uri(); // Point RPC to mock
+        cfg.proxy_address = Some("0x1234567890123456789012345678901234567890".to_string());
 
         let client = PolyExecutionClient::new(cfg)
             .await
@@ -581,8 +599,7 @@ mod tests {
     #[ignore] // Run with `cargo test -- --ignored`
     async fn test_client_real_connection() {
         let mut cfg = PolyCfg::default();
-        cfg.private_key =
-            "dummypk".to_string();
+        cfg.private_key = "dummypk".to_string();
         cfg.proxy_address = Some("dummyproxyaddress".to_string());
 
         let client = PolyExecutionClient::new(cfg.clone())
