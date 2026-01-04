@@ -83,9 +83,22 @@ impl PolyExecutionClient {
             .context("Invalid private key format")?
             .with_chain_id(Some(POLYGON));
 
-        // 1. Derive credentials manually first (One-Time derivation)
-        let creds = Self::derive_credentials(&signer, &cfg.base_url).await?;
-        info!("Derived API Credentials Manually: Key={}", creds.api_key);
+        // 1. Determine Credentials (Manual Config vs Derived)
+        let creds = if let (Some(k), Some(s), Some(p)) =
+            (&cfg.api_key, &cfg.api_secret, &cfg.api_passphrase)
+        {
+            info!("Using configured API credentials (skipping derivation).");
+            ApiCreds {
+                api_key: k.clone(),
+                secret: s.clone(),
+                passphrase: p.clone(),
+            }
+        } else {
+            // Fallback: Derive credentials manually (One-Time derivation)
+            let c = Self::derive_credentials(&signer, &cfg.base_url).await?;
+            info!("Derived API Credentials Manually: Key={}", c.api_key);
+            c
+        };
 
         // 2. Construct SDK Credentials
         use uuid::Uuid;
@@ -601,8 +614,22 @@ mod tests {
     #[ignore] // Run with `cargo test -- --ignored`
     async fn test_client_real_connection() {
         let mut cfg = PolyCfg::default();
-        cfg.private_key = "dummypk".to_string();
-        cfg.proxy_address = Some("dummyproxyaddress".to_string());
+        cfg.private_key =
+            "k".to_string();
+        cfg.proxy_address = Some("p".to_string());
+
+        // Derive and Print Credentials for Manual Use
+        let signer = PrivateKeySigner::from_str(&cfg.private_key).expect("Invalid Key");
+        match PolyExecutionClient::derive_credentials(&signer, &cfg.base_url).await {
+            Ok(creds) => {
+                println!("\n=== GENERATED API CREDENTIALS ===");
+                println!("POLY_API_KEY={}", creds.api_key);
+                println!("POLY_API_SECRET={}", creds.secret);
+                println!("POLY_API_PASSPHRASE={}", creds.passphrase);
+                println!("=================================\n");
+            }
+            Err(e) => println!("Error deriving credentials: {:?}", e),
+        }
 
         let client = PolyExecutionClient::new(cfg.clone())
             .await

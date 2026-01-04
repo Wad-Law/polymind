@@ -113,6 +113,12 @@ pub struct PolyCfg {
     pub private_key: String,
     #[serde(default, rename = "proxyAddress")]
     pub proxy_address: Option<String>,
+    #[serde(default, rename = "apiKey")]
+    pub api_key: Option<String>,
+    #[serde(default, rename = "apiSecret")]
+    pub api_secret: Option<String>,
+    #[serde(default, rename = "apiPassphrase")]
+    pub api_passphrase: Option<String>,
 }
 
 impl Default for PolyCfg {
@@ -129,6 +135,9 @@ impl Default for PolyCfg {
             data_api_url: "https://data-api.polymarket.com".to_string(),
             private_key: "".to_string(),
             proxy_address: None,
+            api_key: None,
+            api_secret: None,
+            api_passphrase: None,
         }
     }
 }
@@ -238,6 +247,21 @@ impl AppCfg {
             builder = builder
                 .set_override("polymarket.proxyAddress", addr)
                 .context("setting POLY_PROXY_ADDRESS")?;
+        }
+        if let Ok(k) = std::env::var("POLY_API_KEY") {
+            builder = builder
+                .set_override("polymarket.apiKey", k)
+                .context("setting POLY_API_KEY")?;
+        }
+        if let Ok(s) = std::env::var("POLY_API_SECRET") {
+            builder = builder
+                .set_override("polymarket.apiSecret", s)
+                .context("setting POLY_API_SECRET")?;
+        }
+        if let Ok(p) = std::env::var("POLY_API_PASSPHRASE") {
+            builder = builder
+                .set_override("polymarket.apiPassphrase", p)
+                .context("setting POLY_API_PASSPHRASE")?;
         }
 
         let cfg = builder.build().context("building config")?;
