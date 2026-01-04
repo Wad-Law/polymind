@@ -101,6 +101,9 @@ mod tests {
             data_api_url: "http://localhost/positions".to_string(),
             private_key: "".to_string(),
             proxy_address: None,
+            api_key: None,
+            api_secret: None,
+            api_passphrase: None,
         }
     }
 
